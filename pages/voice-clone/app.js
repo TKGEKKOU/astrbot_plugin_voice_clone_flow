@@ -95,6 +95,27 @@ async function loadVoices(preferred = "") {
   await selectVoice(select.value);
 }
 
+function renderFfmpegManualHelp(resource) {
+  const help = $("ffmpegManualHelp");
+  if (!help) return;
+  help.replaceChildren();
+  if (!resource.error) { help.hidden = true; return; }
+  help.hidden = false;
+  const title = document.createElement("strong");
+  title.textContent = "自动下载失败，可手动下载 FFmpeg";
+  const text = document.createElement("p");
+  text.textContent = `下载 ZIP 后解压，将 ffmpeg.exe 和 ffprobe.exe 放入：${resource.managed_path}`;
+  help.append(title, text);
+  for (const item of resource.manual_download_urls || []) {
+    const link = document.createElement("a");
+    link.href = item.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = item.name;
+    help.append(document.createTextNode(" "), link);
+  }
+}
+
 function renderResource(prefix, resource) {
   const ready = Boolean(resource.ready || resource.usable);
   const installing = Boolean(resource.installing);
@@ -103,6 +124,7 @@ function renderResource(prefix, resource) {
   $(`${prefix}Path`).textContent = resource.resolved_path || resource.active_model || resource.resolved_model || "";
   const percent = Number.isFinite(resource.progress_percent) ? resource.progress_percent : (resource.total_bytes ? Math.round(resource.downloaded_bytes * 100 / resource.total_bytes) : 0);
   $(`${prefix}Progress`).textContent = resource.error || (installing ? (resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}`);
+  if (prefix === "ffmpeg") renderFfmpegManualHelp(resource);
   $(`${prefix}ProgressBar`).style.transform = `scaleX(${Math.max(0, Math.min(100, percent)) / 100})`;
   const track = $(`${prefix}ProgressTrack`);
   if (track) track.hidden = !installing;

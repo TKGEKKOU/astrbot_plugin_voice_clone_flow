@@ -131,6 +131,16 @@ class FFmpegResourceManager:
             "install_hint": self.platform_profile.install_hints.get("ffmpeg", ""),
             "resolved_path": str(display_path),
             "managed_path": str(self.managed_ffmpeg),
+            "manual_download_urls": [
+                {
+                    "name": "BtbN FFmpeg（主源）",
+                    "url": FFMPEG_WINDOWS_URLS[0],
+                },
+                {
+                    "name": "Gyan FFmpeg（备用源）",
+                    "url": FFMPEG_WINDOWS_URLS[1],
+                },
+            ] if self.platform_profile.system == "windows" else [],
             "source": source,
             "downloaded_bytes": self.downloaded_bytes,
             "total_bytes": self.total_bytes,
