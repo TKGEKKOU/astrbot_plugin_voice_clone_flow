@@ -21,10 +21,10 @@ VoiceClone Flow 将音视频素材处理、语音标注、GPT-SoVITS 训练、�
 从一段视频或音频开始，插件可以完成音频提取、人声分离、语音切分、STT 标注、片段审核和模型训练，并将最终音色登记为 AstrBot 可直接使用的 `GSV TTS(Local)` Provider。
 
 > [!IMPORTANT]
-> 插件当前专注于 **GPT-SoVITS v2Pro**。运行环境、模型、训练素材和音色成果统一保存在 AstrBot 插件数据目录，不会写入插件源码或 Git 仓库。
+> 基于 **GPT-SoVITS v2Pro**。运行环境、模型、训练素材和音色成果统一保存在 AstrBot 插件数据目录，不会写入插件源码或 Git 仓库。
 
 > [!WARNING]
-> 仅处理你本人拥有或已获得明确授权的声音素材。如果无法确认声音样本是否允许使用，请不要上传、训练或合成。
+> 仅处理你本人拥有或已获得明确授权的声音素材。
 
 ---
 
@@ -141,7 +141,6 @@ flowchart TB
 - 使用 AstrBot STT Provider 完成训练素材标注。
 - 创建或更新 AstrBot `GSV TTS(Local)` Provider。
 - 在消息输出阶段补发中文或日语语音。
-- 不修改 AstrBot 平台源码。
 
 ---
 
@@ -180,9 +179,9 @@ flowchart LR
 
 ---
 
-## 音色管理与 Provider 接入
+## 音色管理与 Provider（模型提供商） 接入
 
-训练完成后，插件会将 GPT 和 SoVITS 权重整理为独立音色，并维护：
+训练完成后，插件会将 GPT 和 SoVITS 权重整理为独立音色，并自动获取：
 
 - GPT 权重
 - SoVITS 权重
@@ -214,7 +213,7 @@ AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
 
 ## 多语言文字与语音消息
 
-VoiceClone Flow 支持将可见文字与语音内容分离处理。
+VoiceClone Flow 支持将文字消息与语音内容分离处理。
 
 | 可见文字 | 语音内容 | 输出方式 |
 | --- | --- | --- |
@@ -223,7 +222,7 @@ VoiceClone Flow 支持将可见文字与语音内容分离处理。
 
 长回复会按句切分为多条语音，并按照原文顺序依次发送。
 
-日语翻译或语音合成失败时，插件只保留中文文字，不会使用错误语言继续朗读。
+翻译或语音合成失败时，插件只保留中文文字消息，不会使用错误语言继续合成。
 
 ---
 
