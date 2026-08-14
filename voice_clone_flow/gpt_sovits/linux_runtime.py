@@ -7,6 +7,9 @@ from os import environ
 from pathlib import Path
 from typing import Callable
 
+from ..linux_tools import LinuxToolInstaller, uv_download_url
+from ..platform_runtime import detect_platform_profile
+
 
 class LinuxPythonEnvironment:
     def __init__(
@@ -16,6 +19,7 @@ class LinuxPythonEnvironment:
         current_python: str | None = None,
         uv_path: str | None = None,
         runner: Callable = subprocess.run,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.install_dir = Path(install_dir)
         self.venv_dir = self.install_dir / ".venv"
@@ -23,6 +27,7 @@ class LinuxPythonEnvironment:
         self.current_python = current_python or sys.executable
         self.uv_path = uv_path if uv_path is not None else self._find_uv()
         self.runner = runner
+        self.progress = progress
 
     @staticmethod
     def _find_uv() -> str | None:
@@ -41,19 +46,45 @@ class LinuxPythonEnvironment:
         try:
             self.runner(command, check=True, capture_output=True, text=True)
         except (OSError, subprocess.CalledProcessError) as first_error:
-            if not self.uv_path:
-                raise RuntimeError(
-                    "无法创建 GPT-SoVITS Python 环境。请安装 python3-venv 或 uv 后重试。"
-                ) from first_error
-            self.runner(
-                [self.uv_path, "venv", "--python", "3.11", str(self.venv_dir)],
-                check=True,
-                capture_output=True,
-                text=True,
+            self.uv_path = self.uv_path or self._install_managed_uv()
+            self._notify("下载 Python 3.11")
+            self._run_checked([self.uv_path, "python", "install", "3.11"])
+            self._notify("创建 GPT-SoVITS Python 环境")
+            self._run_checked(
+                [
+                    self.uv_path,
+                    "venv",
+                    "--clear",
+                    "--python",
+                    "3.11",
+                    str(self.venv_dir),
+                ]
             )
         if not self.python_path.is_file():
             raise RuntimeError(f"Python 环境创建完成但未找到：{self.python_path}")
         return self.python_path
+
+    def _install_managed_uv(self) -> str:
+        profile = detect_platform_profile()
+        tools_dir = self.install_dir.parent / "tools" / "uv"
+        archive = self.install_dir.parent / "downloads" / "uv-linux.tar.gz"
+        self._notify("下载 uv 运行工具")
+        installer = LinuxToolInstaller(tools_dir)
+        installer.download(uv_download_url(profile.architecture), archive)
+        uv, _ = installer.install_uv_archive(archive)
+        archive.unlink(missing_ok=True)
+        return str(uv)
+
+    def _run_checked(self, command: list[str]) -> None:
+        try:
+            self.runner(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise RuntimeError(f"命令执行失败：{' '.join(command)}\n{detail}") from exc
+
+    def _notify(self, message: str) -> None:
+        if self.progress:
+            self.progress(message)
 
     def install_requirements(self, requirements: Path) -> None:
         python = self.ensure()

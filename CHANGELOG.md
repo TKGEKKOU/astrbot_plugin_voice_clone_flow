@@ -23,6 +23,13 @@
 - 市场分类调整为“工具”。
 
 [0.1.0]: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow/releases/tag/v0.1.0
+# 0.2.1
+
+- Linux 可在插件页面内下载静态 FFmpeg，无需使用系统包管理器。
+- GPT-SoVITS 环境创建失败时自动准备 uv、下载 Python 3.11，并重建残缺的虚拟环境。
+- 区分完整安装与残留目录，安装失败后仍可删除半成品或重新下载。
+- 页面实时显示 Linux 工具下载、Python 准备和环境创建阶段，并返回完整命令错误。
+
 # 0.2.0
 
 - 新增 Windows/Linux 自动平台检测，并在下载、启动和训练操作前重新检查环境。

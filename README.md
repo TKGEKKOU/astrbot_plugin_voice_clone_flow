@@ -229,8 +229,9 @@ VoiceClone Flow 支持将文字消息与语音内容分离处理。
 ## 系统支持
 
 - Windows：沿用 v2Pro 整合包安装流程。
-- Linux：自动使用官方源码创建插件独立 `.venv`；若系统 Python 无法创建虚拟环境且已安装 `uv`，插件会自动获取 Python 3.11。
-- Linux 的 FFmpeg、7-Zip、Git 等系统依赖由系统包管理器维护。插件只检测并显示安装命令，不会执行 `sudo` 或修改软件源。
+- Linux：在插件页面内下载官方源码并创建独立 `.venv`；系统 Python 不可用时，插件会自动准备 uv 和 Python 3.11。
+- Linux 的 FFmpeg 可直接在插件页面下载到插件数据目录，无需执行 `sudo` 或修改系统 PATH。
+- 插件不会修改系统软件源、驱动或全局 Python 环境；页面会实时显示下载和环境创建阶段。
 - 运行环境、模型和训练成果写入 AstrBot 插件数据目录，不写入插件源码目录。
 
 ## 快速开始
@@ -238,7 +239,7 @@ VoiceClone Flow 支持将文字消息与语音内容分离处理。
 ### 运行要求
 
 - AstrBot `>=4.24,<5`
-- Windows 10/11
+- Windows 10/11，或主流 x86_64/arm64 Linux 发行版
 - AstrBot 中已启用的语音转文字（STT/ASR）Provider
 - 足够的磁盘空间用于运行包、模型和训练成果
 - 建议使用 NVIDIA GPU 进行 GPT-SoVITS 训练和推理

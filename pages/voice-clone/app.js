@@ -114,12 +114,12 @@ async function loadRuntimeStatus() {
     $("ttsState").textContent = `GPT-SoVITS TTS ${ttsText}`;
     $("ttsState").dataset.state = service.service_running ? "ready" : service.start_error ? "error" : service.starting || runtime.installing ? "loading" : "idle";
     $("gptPath").textContent = runtime.install_dir || service.install_dir || "";
-    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? "正在加载模型，首次启动可能需要几分钟" : runtime.installing ? `${runtime.progress_percent ?? 0}%` : "");
+    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? "正在加载模型，首次启动可能需要几分钟" : runtime.installing ? (runtime.detail || (Number.isFinite(runtime.progress_percent) ? `${runtime.progress_percent}%` : "正在准备运行环境")) : "");
     $("gptProgressTrack").hidden = !runtime.installing;
     const gptPercent = runtime.installing && Number.isFinite(runtime.progress_percent) ? runtime.progress_percent : 0;
     $("gptProgressBar").style.transform = `scaleX(${Math.max(0, Math.min(100, gptPercent)) / 100})`;
     $("installGpt").hidden = runtime.installing; $("cancelGpt").hidden = !runtime.installing;
-    $("installGpt").disabled = runtime.installed; $("startGpt").hidden = Boolean(service.service_running || service.starting); $("stopGpt").hidden = !service.service_running && !service.starting; $("startGpt").disabled = runtime.installing || !runtime.installed; $("deleteGpt").disabled = runtime.installing || service.starting || !runtime.installed;
+    $("installGpt").disabled = runtime.installed; $("startGpt").hidden = Boolean(service.service_running || service.starting); $("stopGpt").hidden = !service.service_running && !service.starting; $("startGpt").disabled = runtime.installing || !runtime.installed; $("deleteGpt").disabled = runtime.installing || service.starting || !runtime.present;
     renderResource("ffmpeg", data.ffmpeg || {});
     renderResource("separator", data.separator || {});
     $("runtimeError").textContent = "";
