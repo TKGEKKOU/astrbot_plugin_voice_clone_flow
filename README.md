@@ -21,7 +21,7 @@ VoiceClone Flow 将音视频素材处理、语音标注、GPT-SoVITS 训练、�
 从一段视频或音频开始，插件可以完成音频提取、人声分离、语音切分、STT 标注、片段审核和模型训练，并将最终音色登记为 AstrBot 可直接使用的 `GSV TTS(Local)` Provider。
 
 > [!IMPORTANT]
-> 基于 **GPT-SoVITS v2Pro**。运行环境、模型、训练素材和音色成果统一保存在 AstrBot 插件数据目录，不会写入插件源码或 Git 仓库。
+> 基于 **GPT-SoVITS v2Pro**。运行环境、模型、训练素材和训练结果文件统一保存在 AstrBot 插件数据目录。
 
 > [!WARNING]
 > 仅处理你本人拥有或已获得明确授权的音视频素材。
