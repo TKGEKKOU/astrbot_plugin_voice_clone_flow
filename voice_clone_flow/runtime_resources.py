@@ -162,18 +162,27 @@ class FFmpegResourceManager:
         archive = self.root.parent / "ffmpeg.zip.part"
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            request = urllib.request.Request(
-                self.download_url, headers={"User-Agent": "VoiceCloneFlow/0.1"}
-            )
-            with (
-                urllib.request.urlopen(request, timeout=180) as response,
-                archive.open("wb") as target,
-            ):
-                self.total_bytes = int(response.headers.get("Content-Length", 0))
-                self.downloaded_bytes = 0
-                while block := response.read(1024 * 1024):
-                    target.write(block)
-                    self.downloaded_bytes += len(block)
+            last_error: Exception | None = None
+            for attempt in range(1, 4):
+                try:
+                    request = urllib.request.Request(
+                        self.download_url,
+                        headers={"User-Agent": "VoiceCloneFlow/0.2", "Accept": "*/*"},
+                    )
+                    with urllib.request.urlopen(request, timeout=60) as response:
+                        self.total_bytes = int(response.headers.get("Content-Length", 0))
+                        self.downloaded_bytes = 0
+                        with archive.open("wb") as target:
+                            while block := response.read(256 * 1024):
+                                target.write(block)
+                                self.downloaded_bytes += len(block)
+                    last_error = None
+                    break
+                except (TimeoutError, OSError) as exc:
+                    last_error = exc
+                    self.error = f"FFmpeg 下载读取超时，正在重试 ({attempt}/3)"
+            if last_error is not None:
+                raise RuntimeError(f"FFmpeg 下载失败：{last_error}") from last_error
             with zipfile.ZipFile(archive) as package:
                 for wanted, target in (
                     ("ffmpeg.exe", self.managed_ffmpeg),
