@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import threading
 import urllib.request
 import zipfile
@@ -54,6 +55,10 @@ class FFmpegResourceManager:
         found = self.which("ffmpeg")
         if found:
             return Path(found)
+        if self.platform_profile.system == "windows":
+            found = self._where_windows_ffmpeg()
+            if found:
+                return found
         common = next(
             (path.resolve() for path in self.common_paths if path.is_file()), None
         )
@@ -76,6 +81,24 @@ class FFmpegResourceManager:
                 candidate = drive / pattern
                 if candidate.is_file():
                     return candidate.resolve()
+        return None
+
+    def _where_windows_ffmpeg(self) -> Path | None:
+        """Resolve FFmpeg from the Windows system search path as seen by cmd.exe."""
+        try:
+            result = subprocess.run(
+                ["where.exe", "ffmpeg.exe"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        for line in result.stdout.splitlines():
+            candidate = Path(line.strip().strip('"'))
+            if candidate.is_file():
+                return candidate.resolve()
         return None
 
     def status(self) -> dict[str, object]:
