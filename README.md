@@ -328,3 +328,7 @@ GPT-SoVITS、FFmpeg、人声分离模型及兼容补丁分别受其上游许可�
 ## 开源协议
 
 本项目采用 [GNU Affero General Public License v3.0](LICENSE)。
+
+<div align="center">
+  <img src="./logo.png" alt="VoiceClone Flow Logo" width="56">
+</div>
