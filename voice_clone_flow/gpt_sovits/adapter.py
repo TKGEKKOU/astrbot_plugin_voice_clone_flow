@@ -7,6 +7,7 @@ GPT-SoVITS source code is modified, and the engine stays replaceable.
 
 import json
 import os
+import signal
 import socket
 import subprocess
 import threading
@@ -45,6 +46,7 @@ class GPTSoVITSAdapter:
         self.opener = opener
         self.sleeper = sleeper
         self.platform_profile = platform_profile or detect_platform_profile()
+        self._profile_injected = platform_profile is not None
         self._process: subprocess.Popen | None = None
         self._job = None
         self._lock = threading.Lock()
@@ -225,6 +227,8 @@ class GPTSoVITSAdapter:
     def ensure_service(self) -> None:
         """Start the API service if it is not already running and healthy."""
 
+        if not self._profile_injected:
+            self.platform_profile = detect_platform_profile()
         probe = self.probe()
         if not probe.ok:
             raise GPTSoVITSNotInstalled(probe.error or "GPT-SoVITS 安装不完整")
@@ -232,11 +236,7 @@ class GPTSoVITSAdapter:
             if self.is_alive():
                 return
             if self._process is not None:
-                self._process.terminate()
-                try:
-                    self._process.wait(timeout=8)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
+                self._terminate_tracked_process(self._process)
                 self._process = None
             log_path = self.project_root / "data" / "logs" / "gpt-sovits-api.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,16 +284,28 @@ class GPTSoVITSAdapter:
                 return
             process = self._process
             self._process = None
-            process.terminate()
-            try:
-                process.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            self._terminate_tracked_process(process)
             self._close_job()
             self._kill_listener()
             self._loaded_gpt = None
             self._loaded_sovits = None
             self._loaded_refer = None
+
+    def _terminate_tracked_process(self, process: subprocess.Popen) -> None:
+        try:
+            if self.platform_profile.system == "linux":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+            process.wait(timeout=8)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                if self.platform_profile.system == "linux":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+            except OSError:
+                pass
 
     # ------------------------------------------------------------------
     # inference
@@ -360,6 +372,7 @@ class GPTSoVITSAdapter:
     def status(self) -> dict:
         probe = self.probe()
         alive = self.is_alive()
+        log_path = self.project_root / "data" / "logs" / "gpt-sovits-api.log"
         return {
             "configured": bool(self.config.values()["install_dir"]),
             "installed": probe.ok,
@@ -370,5 +383,8 @@ class GPTSoVITSAdapter:
             "api_version": probe.api_version,
             "api_port": self.port,
             "service_running": alive,
+            "platform": self.platform_profile.system,
+            "process_id": self._process.pid if self._process and self._process.poll() is None else None,
+            "log_path": str(log_path),
             "error": probe.error,
         }

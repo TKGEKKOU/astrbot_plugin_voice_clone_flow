@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
 import sys
 from os import environ
@@ -20,6 +22,7 @@ class LinuxPythonEnvironment:
         uv_path: str | None = None,
         runner: Callable = subprocess.run,
         progress: Callable[[str], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> None:
         self.install_dir = Path(install_dir)
         self.venv_dir = self.install_dir / ".venv"
@@ -28,6 +31,7 @@ class LinuxPythonEnvironment:
         self.uv_path = uv_path if uv_path is not None else self._find_uv()
         self.runner = runner
         self.progress = progress
+        self.cancelled = cancelled or (lambda: False)
 
     @staticmethod
     def _find_uv() -> str | None:
@@ -45,7 +49,7 @@ class LinuxPythonEnvironment:
         command = [self.current_python, "-m", "venv", str(self.venv_dir)]
         try:
             self.runner(command, check=True, capture_output=True, text=True)
-        except (OSError, subprocess.CalledProcessError) as first_error:
+        except (OSError, subprocess.CalledProcessError):
             self.uv_path = self.uv_path or self._install_managed_uv()
             self._notify("下载 Python 3.11")
             self._run_checked([self.uv_path, "python", "install", "3.11"])
@@ -90,8 +94,52 @@ class LinuxPythonEnvironment:
         python = self.ensure()
         if not requirements.is_file():
             raise RuntimeError(f"GPT-SoVITS 源码缺少依赖文件：{requirements}")
-        self.runner(
+        self.run_streamed(
             [str(python), "-m", "pip", "install", "-r", str(requirements)],
             cwd=str(self.install_dir),
-            check=True,
         )
+
+    def run_streamed(self, command: list[str], cwd: Path | str | None = None) -> None:
+        """Run a long command while exposing its latest output and supporting cancel."""
+
+        options = {"start_new_session": True} if sys.platform != "win32" else {}
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **options,
+        )
+        output: list[str] = []
+        assert process.stdout is not None
+        try:
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if line:
+                    output.append(line)
+                    output = output[-20:]
+                    self._notify(line)
+                if self.cancelled():
+                    self._terminate_process(process)
+                    raise RuntimeError("安装已取消")
+            returncode = process.wait()
+        finally:
+            if process.poll() is None:
+                self._terminate_process(process)
+        if returncode:
+            detail = "\n".join(output[-12:]) or f"退出码 {returncode}"
+            raise RuntimeError(f"命令执行失败：{' '.join(command)}\n{detail}")
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen) -> None:
+        try:
+            if sys.platform != "win32":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+            process.wait(timeout=8)
+        except (OSError, subprocess.TimeoutExpired):
+            process.kill()

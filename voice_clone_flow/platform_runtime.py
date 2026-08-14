@@ -79,7 +79,8 @@ def detect_platform_profile(
         archive_tool=archive_tool,
         git_path=which("git") or "",
         can_use_bundled_7zr=is_windows,
-        can_download_managed_ffmpeg=is_windows or is_linux,
+        can_download_managed_ffmpeg=(is_windows and architecture == "x86_64")
+        or (is_linux and architecture in {"x86_64", "arm64"}),
         can_open_directory=can_open_directory,
         install_hints=dict(INSTALL_HINTS.get(system_name, {})),
     )

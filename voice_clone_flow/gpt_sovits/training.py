@@ -11,6 +11,7 @@ of the distribution is modified.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import threading

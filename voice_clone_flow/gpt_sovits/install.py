@@ -25,7 +25,29 @@ from ..platform_runtime import PlatformProfile, detect_platform_profile
 from .linux_runtime import LinuxPythonEnvironment
 
 
-LINUX_SOURCE_URL = "https://github.com/RVC-Boss/GPT-SoVITS/archive/refs/heads/main.zip"
+LINUX_SOURCE_REVISION = "d523079fc05d9a8028d6085bffe4a2757c32abb6"
+LINUX_SOURCE_URL = (
+    f"https://github.com/RVC-Boss/GPT-SoVITS/archive/{LINUX_SOURCE_REVISION}.zip"
+)
+LINUX_PRETRAINED_URLS = (
+    "https://www.modelscope.cn/models/XXXXRT/GPT-SoVITS-Pretrained/resolve/master/pretrained_models.zip",
+    "https://hf-mirror.com/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/pretrained_models.zip",
+    "https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/pretrained_models.zip",
+)
+LINUX_G2PW_URLS = (
+    "https://www.modelscope.cn/models/XXXXRT/GPT-SoVITS-Pretrained/resolve/master/G2PWModel.zip",
+    "https://hf-mirror.com/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip",
+    "https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip",
+)
+LINUX_REQUIRED_MODEL_PATHS = (
+    "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large/config.json",
+    "GPT_SoVITS/pretrained_models/chinese-hubert-base/config.json",
+    "GPT_SoVITS/pretrained_models/s1v3.ckpt",
+    "GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth",
+    "GPT_SoVITS/pretrained_models/v2Pro/s2Dv2Pro.pth",
+    "GPT_SoVITS/pretrained_models/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+)
+MINIMUM_FREE_BYTES = {"windows": 24 * 1024**3, "linux": 12 * 1024**3}
 
 
 # Content inside the integrated package that the project never uses. The
@@ -63,6 +85,8 @@ class _InstallState:
         self.error = ""
         self.started_at: float | None = None
         self.source = ""
+        self.overall_percent = 0
+        self.last_output = ""
 
     def set_progress(
         self,
@@ -77,6 +101,19 @@ class _InstallState:
         self.downloaded_bytes = downloaded
         self.total_bytes = total
         self.detail = detail
+
+    def set_stage(self, phase: str, detail: str, *, progress_percent: int) -> None:
+        self.phase = phase
+        self.current_file = ""
+        self.downloaded_bytes = 0
+        self.total_bytes = 0
+        self.detail = detail
+        self.overall_percent = max(0, min(100, progress_percent))
+
+    def set_output(self, output: str) -> None:
+        self.last_output = output[-1000:]
+        if output:
+            self.detail = output[-300:]
 
     def snapshot(self) -> dict:
         elapsed = time.monotonic() - self.started_at if self.started_at else 0
@@ -95,7 +132,8 @@ class _InstallState:
             "downloaded_bytes": self.downloaded_bytes,
             "total_bytes": self.total_bytes,
             "detail": self.detail,
-            "progress_percent": round(self.downloaded_bytes * 100 / self.total_bytes)
+            "progress_percent": self.overall_percent,
+            "phase_progress_percent": round(self.downloaded_bytes * 100 / self.total_bytes)
             if self.total_bytes
             else None,
             "download_speed_bytes": round(speed),
@@ -107,6 +145,7 @@ class _InstallState:
             "elapsed_seconds": round(elapsed),
             "error": self.error,
             "source": self.source,
+            "last_output": self.last_output,
         }
 
 
@@ -127,15 +166,24 @@ class GPTSoVITSInstallManager:
         self.download_dir = self.project_root / "downloads" / "gpt_sovits"
         self.state = _InstallState()
         self._lock = threading.Lock()
+        self._device_profile: tuple[str, bool] | None = None
 
     def status(self) -> dict:
         probe = probe_installation(
-            self.install_dir if self.install_dir.is_dir() else None
+            self.install_dir if self.install_dir.is_dir() else None,
+            system=self.platform_profile.system,
         )
         snapshot = self.state.snapshot()
+        disk_free = shutil.disk_usage(self.project_root).free
+        device, is_half = self._runtime_device()
+        missing_models = (
+            self._missing_linux_models()
+            if self.platform_profile.system == "linux" and self.install_dir.is_dir()
+            else []
+        )
         return {
             **snapshot,
-            "installed": probe.ok,
+            "installed": probe.ok and not missing_models,
             "present": self.install_dir.is_dir(),
             "install_dir": str(self.install_dir),
             "patches_dir": str(self.patches_dir) if self.patches_dir.is_dir() else "",
@@ -146,6 +194,14 @@ class GPTSoVITSInstallManager:
             "install_strategy": "linux_source"
             if self.platform_profile.system == "linux"
             else "windows_bundle",
+            "source_revision": LINUX_SOURCE_REVISION
+            if self.platform_profile.system == "linux"
+            else "v2pro-20250604",
+            "disk_free_bytes": disk_free,
+            "minimum_free_bytes": MINIMUM_FREE_BYTES.get(self.platform_profile.system, 0),
+            "missing_models": missing_models,
+            "runtime_device": device,
+            "half_precision": is_half,
         }
 
     def remove_install(self) -> dict:
@@ -165,14 +221,34 @@ class GPTSoVITSInstallManager:
                 return False
             if not self._profile_injected:
                 self.platform_profile = detect_platform_profile()
+            self._device_profile = None
+            if self.platform_profile.system not in {"windows", "linux"}:
+                raise RuntimeError("GPT-SoVITS 一键安装目前仅支持 Windows 和 Linux")
+            if self.platform_profile.architecture not in {"x86_64", "arm64"}:
+                raise RuntimeError(
+                    f"当前 CPU 架构不支持一键安装：{self.platform_profile.architecture}"
+                )
+            if (
+                self.platform_profile.system == "windows"
+                and self.platform_profile.architecture != "x86_64"
+            ):
+                raise RuntimeError("Windows 一键安装目前仅支持 x86_64 架构")
+            required = MINIMUM_FREE_BYTES[self.platform_profile.system]
+            available = shutil.disk_usage(self.project_root).free
+            if available < required:
+                raise RuntimeError(
+                    f"磁盘空间不足：至少需要 {required / 1024**3:.0f} GB，"
+                    f"当前可用 {available / 1024**3:.1f} GB"
+                )
             url = self._effective_download_url((url or "").strip())
             if not url:
                 raise ValueError("请提供 GPT-SoVITS 整合包下载地址（7z 或 zip）")
             self.state.installing = True
             self.state.cancel_requested.clear()
             self.state.error = ""
+            self.state.last_output = ""
             self.state.started_at = time.monotonic()
-            self.state.set_progress("preparing", "", 0, 0)
+            self.state.set_stage("preparing", "检测系统并准备下载", progress_percent=0)
         threading.Thread(
             target=self._install,
             args=(url,),
@@ -197,28 +273,37 @@ class GPTSoVITSInstallManager:
         try:
             self.download_dir.mkdir(parents=True, exist_ok=True)
             archive = self._obtain_archive(url)
+            self.state.set_stage("download", "源码或整合包下载完成", progress_percent=8)
             if self.state.cancel_requested.is_set():
                 raise GPTSoVITSInstallCancelled()
-            self.state.set_progress(
-                "extracting", archive.name, 0, 0, detail="准备解压…"
-            )
-            self._extract(archive)
+            if self.platform_profile.system == "linux" and self._has_linux_source_tree():
+                self.state.set_stage("extracting", "复用已解压的官方源码", progress_percent=12)
+            else:
+                self.state.set_progress("extracting", archive.name, 0, 0, detail="准备解压…")
+                self._extract(archive)
+                self.state.set_stage("extracting", "源码或整合包解压完成", progress_percent=15)
             if self.platform_profile.system == "linux":
                 self._prepare_linux_runtime()
-            self.state.set_progress("patching", "", 0, 0, detail="准备应用项目补丁…")
+            self.state.set_stage("patching", "准备应用项目补丁", progress_percent=92)
             self._apply_patches()
             self._configure_v2pro_default()
-            self.state.set_progress("cleaning", "", 0, 0, detail="清理冗余文件…")
+            self.state.set_stage("cleaning", "清理冗余文件", progress_percent=96)
             self._slim_install()
-            self.state.set_progress("verifying", "", 0, 0, detail="校验安装完整性…")
-            probe = probe_installation(self.install_dir)
+            self.state.set_stage("verifying", "校验安装完整性", progress_percent=99)
+            if self.platform_profile.system == "linux":
+                missing = self._missing_linux_models()
+                if missing:
+                    raise RuntimeError("预训练模型安装不完整：" + "、".join(missing))
+            probe = probe_installation(
+                self.install_dir, system=self.platform_profile.system
+            )
             if not probe.ok:
                 raise RuntimeError(probe.error or "解压后未找到可用的 GPT-SoVITS 安装")
             self.config.save(install_dir=str(self.install_dir))
             # 安装成功后删除下载缓存；失败时保留以便断点续传/重试。
             archive.unlink(missing_ok=True)
             archive.with_suffix(archive.suffix + ".part").unlink(missing_ok=True)
-            self.state.set_progress("complete", "", 0, 0)
+            self.state.set_stage("complete", "安装完成，可以启动 TTS 服务", progress_percent=100)
         except GPTSoVITSInstallCancelled:
             self.state.error = ""
             self.state.set_progress("idle", "", 0, 0)
@@ -235,27 +320,84 @@ class GPTSoVITSInstallManager:
             self.state.started_at = None
 
     def _prepare_linux_runtime(self) -> None:
-        self.state.set_progress("python", "", 0, 3, detail="创建独立 Python 环境")
+        self.state.set_stage("python", "创建独立 Python 环境", progress_percent=15)
         environment = LinuxPythonEnvironment(
             self.install_dir,
-            progress=lambda detail: self.state.set_progress(
-                "python", "", 0, 0, detail=detail
-            ),
+            progress=self.state.set_output,
+            cancelled=self.state.cancel_requested.is_set,
         )
-        python = environment.ensure()
-        self.state.set_progress(
-            "python", "requirements.txt", 1, 3, detail="安装 GPT-SoVITS 依赖"
-        )
+        environment.ensure()
+        self.state.set_stage("dependencies", "安装 GPT-SoVITS Python 依赖", progress_percent=25)
         environment.install_requirements(self.install_dir / "requirements.txt")
-        downloader = self.install_dir / "tools" / "download_models.py"
-        if downloader.is_file():
-            self.state.set_progress(
-                "models", downloader.name, 2, 3, detail="下载预训练模型"
+        self.state.set_stage("models", "下载 GPT-SoVITS v2Pro 预训练模型", progress_percent=55)
+        self._install_linux_model_archive(
+            "pretrained_models.zip", LINUX_PRETRAINED_URLS, self.install_dir / "GPT_SoVITS"
+        )
+        self.state.set_stage("models", "下载中文前端模型", progress_percent=82)
+        self._install_linux_model_archive(
+            "G2PWModel.zip", LINUX_G2PW_URLS, self.install_dir / "GPT_SoVITS" / "text"
+        )
+        missing = self._missing_linux_models()
+        if missing:
+            raise RuntimeError("预训练模型包缺少必需文件：" + "、".join(missing))
+        self.state.set_stage("models", "Linux 运行环境准备完成", progress_percent=90)
+
+    def _has_linux_source_tree(self) -> bool:
+        return all(
+            path.is_file()
+            for path in (
+                self.install_dir / "api_v2.py",
+                self.install_dir / "requirements.txt",
             )
-            subprocess.run(
-                [str(python), str(downloader)], cwd=str(self.install_dir), check=True
-            )
-        self.state.set_progress("models", "", 3, 3, detail="Linux 运行环境准备完成")
+        ) and (self.install_dir / "GPT_SoVITS").is_dir()
+
+    def _missing_linux_models(self) -> list[str]:
+        return [relative for relative in LINUX_REQUIRED_MODEL_PATHS if not (self.install_dir / relative).is_file()]
+
+    def _install_linux_model_archive(
+        self, filename: str, urls: tuple[str, ...], destination: Path
+    ) -> None:
+        if filename == "pretrained_models.zip" and not self._missing_linux_models():
+            return
+        if filename == "G2PWModel.zip" and (destination / "G2PWModel").is_dir():
+            return
+        archive = self.download_dir / filename
+        last_error: Exception | None = None
+        for url in urls:
+            try:
+                self._download(url, archive, phase="models")
+                self._extract_zip_into(archive, destination)
+                archive.unlink(missing_ok=True)
+                return
+            except GPTSoVITSInstallCancelled:
+                raise
+            except Exception as exc:
+                last_error = exc
+                archive.unlink(missing_ok=True)
+                archive.with_suffix(archive.suffix + ".part").unlink(missing_ok=True)
+        raise RuntimeError(f"下载或解压 {filename} 失败：{last_error}")
+
+    def _extract_zip_into(self, archive: Path, destination: Path) -> None:
+        destination.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive) as package:
+            members = package.infolist()
+            total = sum(item.file_size for item in members if not item.is_dir())
+            done = 0
+            for member in members:
+                if self.state.cancel_requested.is_set():
+                    raise GPTSoVITSInstallCancelled()
+                target = self._safe_member_path(destination, member.filename)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with package.open(member) as source, target.open("wb") as output:
+                    while chunk := source.read(1024 * 1024):
+                        output.write(chunk)
+                        done += len(chunk)
+                        self.state.set_progress(
+                            "models", member.filename, done, total, detail=f"解压 {member.filename}"
+                        )
 
     def _obtain_archive(self, url: str) -> Path:
         filename = Path(urlsplit(url).path).name or "gpt-sovits.zip"
@@ -274,8 +416,8 @@ class GPTSoVITSInstallManager:
         self._download(url, archive)
         return archive
 
-    def _download(self, url: str, destination: Path) -> None:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    def _download(self, url: str, destination: Path, *, phase: str = "download") -> None:
+        opener = urllib.request.build_opener()
         attempt = 0
         while True:
             attempt += 1
@@ -295,12 +437,15 @@ class GPTSoVITSInstallManager:
             try:
                 with (
                     opener.open(request, timeout=60) as response,
-                    partial.open("ab" if resume else "wb") as target,
+                    partial.open(
+                        "ab" if resume and getattr(response, "status", None) == 206 else "wb"
+                    ) as target,
                 ):
-                    total = resume + int(response.headers.get("Content-Length") or 0)
-                    downloaded = resume
+                    resumable = resume > 0 and getattr(response, "status", None) == 206
+                    downloaded = resume if resumable else 0
+                    total = downloaded + int(response.headers.get("Content-Length") or 0)
                     self.state.set_progress(
-                        "download",
+                        phase,
                         destination.name,
                         downloaded,
                         total,
@@ -312,7 +457,7 @@ class GPTSoVITSInstallManager:
                         target.write(chunk)
                         downloaded += len(chunk)
                         self.state.set_progress(
-                            "download",
+                            phase,
                             destination.name,
                             downloaded,
                             total,
@@ -396,8 +541,12 @@ class GPTSoVITSInstallManager:
                 ):
                     extracted = temporary / base
                     if extracted.is_dir():
+                        if self.install_dir.exists():
+                            shutil.rmtree(self.install_dir)
                         shutil.move(str(extracted), str(self.install_dir))
                         return
+                if self.install_dir.exists():
+                    shutil.rmtree(self.install_dir)
                 self.install_dir.mkdir(parents=True, exist_ok=True)
                 for child in temporary.iterdir():
                     shutil.move(str(child), str(self.install_dir))
@@ -453,6 +602,8 @@ class GPTSoVITSInstallManager:
             if returncode != 0:
                 raise RuntimeError(f"7-Zip 解压失败（退出码 {returncode}）")
             children = list(temporary.iterdir())
+            if self.install_dir.exists():
+                shutil.rmtree(self.install_dir)
             if len(children) == 1 and children[0].is_dir():
                 shutil.move(str(children[0]), str(self.install_dir))
             else:
@@ -543,12 +694,13 @@ class GPTSoVITSInstallManager:
         if marker not in text:
             raise RuntimeError("GPT-SoVITS 推理配置格式不兼容，未找到 v1 配置段")
         _, remainder = text.split(marker, 1)
+        device, is_half = self._runtime_device()
         custom = "\n".join(
             [
                 "custom:",
                 "  version: v2Pro",
-                "  device: cuda",
-                "  is_half: true",
+                f"  device: {device}",
+                f"  is_half: {str(is_half).lower()}",
                 "  bert_base_path: GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
                 "  cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base",
                 "  t2s_weights_path: GPT_SoVITS/pretrained_models/s1v3.ckpt",
@@ -556,6 +708,29 @@ class GPTSoVITSInstallManager:
             ]
         )
         config.write_text(f"{custom}{marker}{remainder}", encoding="utf-8")
+
+    def _runtime_device(self) -> tuple[str, bool]:
+        if self._device_profile is not None:
+            return self._device_profile
+        if self.platform_profile.system == "windows":
+            self._device_profile = ("cuda", True)
+            return self._device_profile
+        nvidia_smi = shutil.which("nvidia-smi")
+        if nvidia_smi:
+            try:
+                result = subprocess.run(
+                    [nvidia_smi, "-L"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    self._device_profile = ("cuda", True)
+                    return self._device_profile
+            except (OSError, subprocess.SubprocessError):
+                pass
+        self._device_profile = ("cpu", False)
+        return self._device_profile
 
     def _slim_install(self) -> None:
         """Remove package content the project never uses (see _SLIM_PATHS).

@@ -7,9 +7,18 @@ let runtimeTimer = null;
 let currentVoice = "";
 let trainingTimer = null;
 const presetValues = { light: [5, 10], quick: [10, 20], standard: [15, 30], enhanced: [20, 50], fine: [30, 100] };
+const phaseNames = { preparing: "准备", download: "下载源码", extracting: "解压", python: "准备 Python", dependencies: "安装依赖", models: "下载模型", patching: "应用补丁", cleaning: "清理", verifying: "校验", complete: "完成", error: "失败", cancelling: "正在取消" };
 
 function errorText(error) {
   return error?.message || String(error);
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "--";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(index > 2 ? 1 : 0)} ${units[index]}`;
 }
 
 function update() {
@@ -114,7 +123,13 @@ async function loadRuntimeStatus() {
     $("ttsState").textContent = `GPT-SoVITS TTS ${ttsText}`;
     $("ttsState").dataset.state = service.service_running ? "ready" : service.start_error ? "error" : service.starting || runtime.installing ? "loading" : "idle";
     $("gptPath").textContent = runtime.install_dir || service.install_dir || "";
-    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? "正在加载模型，首次启动可能需要几分钟" : runtime.installing ? (runtime.detail || (Number.isFinite(runtime.progress_percent) ? `${runtime.progress_percent}%` : "正在准备运行环境")) : "");
+    const strategy = runtime.install_strategy === "linux_source" ? "源码安装" : "v2Pro 整合包";
+    $("gptMeta").textContent = `${runtime.platform || data.platform?.system || "unknown"} ${runtime.architecture || data.platform?.architecture || ""} · ${strategy} · ${String(runtime.runtime_device || "").toUpperCase()} · 可用空间 ${formatBytes(runtime.disk_free_bytes)}`;
+    const phase = phaseNames[runtime.phase] || runtime.phase || "";
+    const percentText = Number.isFinite(runtime.progress_percent) ? `总进度 ${runtime.progress_percent}%` : "";
+    const phasePercent = Number.isFinite(runtime.phase_progress_percent) ? `当前项 ${runtime.phase_progress_percent}%` : "";
+    const serviceDetail = service.service_running ? `PID ${service.process_id || "外部进程"} · 日志 ${service.log_path || ""}` : "";
+    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? `正在加载模型 · 日志 ${service.log_path || ""}` : runtime.installing ? [phase, percentText, phasePercent, runtime.detail || runtime.last_output].filter(Boolean).join(" · ") : serviceDetail);
     $("gptProgressTrack").hidden = !runtime.installing;
     const gptPercent = runtime.installing && Number.isFinite(runtime.progress_percent) ? runtime.progress_percent : 0;
     $("gptProgressBar").style.transform = `scaleX(${Math.max(0, Math.min(100, gptPercent)) / 100})`;

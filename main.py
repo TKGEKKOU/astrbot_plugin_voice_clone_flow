@@ -261,6 +261,13 @@ class VoiceCloneFlowPlugin(Star):
             return error_response(str(exc), status_code=409)
 
     async def page_gpt_start(self):
+        runtime = self.gpt_install.status()
+        if not runtime["installed"]:
+            detail = "、".join(runtime.get("missing_models") or [])
+            message = "GPT-SoVITS 运行环境不完整，请先点击下载安装"
+            if detail:
+                message += f"。缺少：{detail}"
+            return error_response(message, status_code=409)
         if self.gpt_starting:
             return json_response({"starting": True, "started": False})
         if self.gpt_adapter.is_alive():

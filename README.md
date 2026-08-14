@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.1.0-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.2-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统支持)
@@ -229,10 +229,20 @@ VoiceClone Flow 支持将文字消息与语音内容分离处理。
 ## 系统支持
 
 - Windows：沿用 v2Pro 整合包安装流程。
-- Linux：在插件页面内下载官方源码并创建独立 `.venv`；系统 Python 不可用时，插件会自动准备 uv 和 Python 3.11。
+- Linux：在插件页面内下载官方源码、创建独立 `.venv`、安装 Python 依赖，并下载与校验 v2Pro 训练/推理所需预训练模型；系统 Python 不可用时，插件会自动准备 uv 和 Python 3.11。
 - Linux 的 FFmpeg 可直接在插件页面下载到插件数据目录，无需执行 `sudo` 或修改系统 PATH。
-- 插件不会修改系统软件源、驱动或全局 Python 环境；页面会实时显示下载和环境创建阶段。
+- 插件不会修改系统软件源、驱动或全局 Python 环境；安装按钮会在执行时重新检测系统和架构。
+- Linux 会通过 `nvidia-smi` 检测可用 NVIDIA GPU；检测失败时使用 CPU 安全配置并关闭半精度，页面会显示当前推理设备。
+- 页面显示当前阶段、百分比、正在处理的文件、依赖安装最新输出和错误详情；取消安装会终止受插件管理的安装子进程。
 - 运行环境、模型和训练成果写入 AstrBot 插件数据目录，不写入插件源码目录。
+
+### 一键安装边界
+
+“下载安装”包含源码或整合包下载、解压、Python 环境、依赖、预训练模型、插件补丁、冗余组件清理和完整性校验。失败缓存会保留用于重试，安装成功后会清理下载压缩包。
+
+为避免上游主分支变更导致同一插件版本的安装结果不一致，Linux 源码固定到插件版本已验证的 GPT-SoVITS 提交；升级 VoiceClone Flow 时才会更新该运行时基线。
+
+Linux 的 Python、uv、FFmpeg 和 GPT-SoVITS 文件均安装到 AstrBot 插件数据目录。插件不会自动安装 NVIDIA 驱动、CUDA 驱动或系统动态库；这些属于服务器基础环境。首次 Linux 验收时请关注页面错误详情和 `data/logs/gpt-sovits-api.log`。
 
 ## 快速开始
 

@@ -115,6 +115,11 @@ class FFmpegResourceManager:
     def start_install(self) -> bool:
         if not self._profile_injected:
             self.platform_profile = detect_platform_profile(which=self.which)
+        if not self.platform_profile.can_download_managed_ffmpeg:
+            raise RuntimeError(
+                f"当前系统或架构不支持自动下载 FFmpeg："
+                f"{self.platform_profile.system}/{self.platform_profile.architecture}"
+            )
         if self.platform_profile.system == "linux":
             if self.resolve():
                 return False
