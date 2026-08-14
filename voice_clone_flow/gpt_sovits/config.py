@@ -8,6 +8,7 @@ serve the HTTP API (``api_v2.py`` / ``api.py``), and remembers the path in
 
 import json
 import os
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,7 +34,11 @@ class InstallationProbe:
         return bool(self.install_dir and self.python_path and self.api_script)
 
 
-def probe_installation(install_dir: Path | None, explicit_python: Path | None = None) -> InstallationProbe:
+def probe_installation(
+    install_dir: Path | None,
+    explicit_python: Path | None = None,
+    system: str | None = None,
+) -> InstallationProbe:
     """Validate a GPT-SoVITS install directory and locate its python + API
     entrypoint. Returns a probe that is ``ok`` when everything needed to
     launch the API service is present."""
@@ -44,13 +49,13 @@ def probe_installation(install_dir: Path | None, explicit_python: Path | None = 
     if not install_dir.is_dir():
         return InstallationProbe(install_dir, None, None, None, f"目录不存在：{install_dir}")
 
-    candidates = (
-        explicit_python,
-        install_dir / ".venv" / "bin" / "python",
-        install_dir / "venv" / "bin" / "python",
-        install_dir / "runtime" / "python.exe",
-        install_dir / "python.exe",
+    system_name = (system or platform.system()).strip().lower()
+    native_candidates = (
+        (install_dir / ".venv" / "bin" / "python", install_dir / "venv" / "bin" / "python")
+        if system_name == "linux"
+        else (install_dir / "runtime" / "python.exe", install_dir / "python.exe")
     )
+    candidates = (explicit_python, *native_candidates)
     python_path = next((path for path in candidates if path and path.is_file()), None)
 
     api_v2 = install_dir / "api_v2.py"

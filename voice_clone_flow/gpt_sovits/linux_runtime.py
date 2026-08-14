@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from os import environ
 from pathlib import Path
 from typing import Callable
 
@@ -20,8 +21,17 @@ class LinuxPythonEnvironment:
         self.venv_dir = self.install_dir / ".venv"
         self.python_path = self.venv_dir / "bin" / "python"
         self.current_python = current_python or sys.executable
-        self.uv_path = uv_path if uv_path is not None else shutil.which("uv")
+        self.uv_path = uv_path if uv_path is not None else self._find_uv()
         self.runner = runner
+
+    @staticmethod
+    def _find_uv() -> str | None:
+        discovered = shutil.which("uv")
+        if discovered:
+            return discovered
+        home = Path(environ.get("HOME", "")).expanduser()
+        candidates = (home / ".local" / "bin" / "uv", Path("/root/.local/bin/uv"))
+        return next((str(path) for path in candidates if path.is_file()), None)
 
     def ensure(self) -> Path:
         if self.python_path.is_file():

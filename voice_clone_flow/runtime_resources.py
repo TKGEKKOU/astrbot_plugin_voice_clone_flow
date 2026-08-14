@@ -69,11 +69,12 @@ class FFmpegResourceManager:
         source = "missing"
         if path:
             source = "configured" if self.configured_path and Path(self.configured_path).is_file() else "managed" if self.managed_ffmpeg.is_file() and path == self.managed_ffmpeg.resolve() else "system"
+        display_path = path or (self.managed_ffmpeg if self.platform_profile.system == "windows" else "ffmpeg")
         return {"ready": bool(path), "installing": self.installing, "error": self.error,
                 "platform": self.platform_profile.system,
                 "can_install": self.platform_profile.can_download_managed_ffmpeg,
                 "install_hint": self.platform_profile.install_hints.get("ffmpeg", ""),
-                "resolved_path": str(path or self.managed_ffmpeg), "managed_path": str(self.managed_ffmpeg),
+                "resolved_path": str(display_path), "managed_path": str(self.managed_ffmpeg),
                 "source": source, "downloaded_bytes": self.downloaded_bytes, "total_bytes": self.total_bytes,
                 "progress_percent": round(self.downloaded_bytes * 100 / self.total_bytes) if self.total_bytes else 0}
 
