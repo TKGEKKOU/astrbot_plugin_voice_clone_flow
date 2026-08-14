@@ -1,0 +1,54 @@
+{
+  "stt_provider_id": {
+    "type": "string",
+    "description": "\u8bed\u97f3\u8bc6\u522b Provider",
+    "hint": "\u7528\u4e8e\u4e3a\u8bad\u7ec3\u97f3\u9891\u751f\u6210\u6587\u5b57\u6807\u6ce8\u3002",
+    "default": "",
+    "_special": "select_provider_stt"
+  },
+  "gpt_sovits": {
+    "type": "object",
+    "description": "GPT-SoVITS \u8bed\u97f3\u540e\u7aef",
+    "items": {
+      "api_base": {"type": "string", "description": "API \u5730\u5740", "default": "http://127.0.0.1:9880"},
+      "api_timeout_seconds": {"type": "int", "description": "API \u8d85\u65f6\uff08\u79d2\uff09", "default": 120}
+    }
+  },
+  "processing": {
+    "type": "object",
+    "description": "\u7d20\u6750\u5904\u7406\u9650\u5236",
+    "items": {
+      "max_upload_mb": {"type": "int", "description": "\u5355\u4e2a\u7d20\u6750\u6700\u5927\u4f53\u79ef\uff08MB\uff09", "default": 400},
+      "max_source_minutes": {"type": "int", "description": "\u7d20\u6750\u6700\u5927\u65f6\u957f\uff08\u5206\u949f\uff09", "default": 30},
+      "default_language": {"type": "string", "description": "\u9ed8\u8ba4\u8bad\u7ec3\u8bed\u8a00", "default": "zh", "options": ["zh", "ja", "en"]}
+    }
+  },
+  "speech_translation": {
+    "type": "object",
+    "description": "中文文字与日语语音",
+    "hint": "保留中文回复，并通过当前会话模型翻译为日语后生成语音。失败时仅发送中文。",
+    "items": {
+      "enabled": {"type": "bool", "description": "启用中文文字 + 日语语音", "default": true},
+      "target_language": {"type": "string", "description": "语音目标语言", "hint": "自动模式会读取当前 TTS Provider 的 text_lang；中文直接朗读，日语先翻译。", "default": "auto", "options": ["auto", "zh", "ja"]},
+      "timeout_seconds": {"type": "int", "description": "翻译超时（秒）", "default": 15},
+      "max_voice_chars": {"type": "int", "description": "单条语音最大字符数（超出按句切分，可发送多条）", "default": 300},
+      "clean_special_characters": {"type": "bool", "description": "清理特殊符号", "default": true},
+      "failure_policy": {"type": "string", "description": "失败处理", "default": "text_only", "options": ["text_only"]}
+    }
+  },
+  "automatic_cleanup": {
+    "type": "object",
+    "description": "历史素材自动清理",
+    "items": {
+      "enabled": {"type": "bool", "description": "启用定时智能清理", "default": true},
+      "retention_days": {"type": "int", "description": "历史素材保留天数", "default": 1},
+      "interval_hours": {"type": "int", "description": "检查间隔（小时）", "default": 24}
+    }
+  },
+  "require_voice_authorization": {
+    "type": "bool",
+    "description": "\u8981\u6c42\u786e\u8ba4\u58f0\u97f3\u6388\u6743",
+    "hint": "\u542f\u7528\u540e\uff0c\u672a\u786e\u8ba4\u62e5\u6709\u58f0\u97f3\u4f7f\u7528\u6743\u7684\u4efb\u52a1\u4e0d\u4f1a\u5f00\u59cb\u5904\u7406\u3002",
+    "default": true
+  }
+}
