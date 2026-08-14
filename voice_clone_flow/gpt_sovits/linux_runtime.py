@@ -44,6 +44,7 @@ class LinuxPythonEnvironment:
 
     def ensure(self) -> Path:
         if self.python_path.is_file():
+            self._ensure_pip()
             return self.python_path
         self.install_dir.mkdir(parents=True, exist_ok=True)
         command = [self.current_python, "-m", "venv", str(self.venv_dir)]
@@ -59,6 +60,7 @@ class LinuxPythonEnvironment:
                     self.uv_path,
                     "venv",
                     "--clear",
+                    "--seed",
                     "--python",
                     "3.11",
                     str(self.venv_dir),
@@ -66,7 +68,32 @@ class LinuxPythonEnvironment:
             )
         if not self.python_path.is_file():
             raise RuntimeError(f"Python 环境创建完成但未找到：{self.python_path}")
+        self._ensure_pip()
         return self.python_path
+
+    def _ensure_pip(self) -> None:
+        check = [str(self.python_path), "-m", "pip", "--version"]
+        try:
+            self.runner(check, check=True, capture_output=True, text=True)
+            return
+        except (OSError, subprocess.CalledProcessError):
+            self.uv_path = self.uv_path or self._install_managed_uv()
+            self._notify("虚拟环境缺少 pip，正在自动补全")
+            self._run_checked(
+                [
+                    self.uv_path,
+                    "pip",
+                    "install",
+                    "--python",
+                    str(self.python_path),
+                    "pip",
+                ]
+            )
+        try:
+            self.runner(check, check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or str(exc)
+            raise RuntimeError(f"pip 自动补全后仍不可用：{detail}") from exc
 
     def _install_managed_uv(self) -> str:
         profile = detect_platform_profile()

@@ -36,22 +36,21 @@ class LinuxToolInstaller:
         request = urllib.request.Request(
             url, headers={"User-Agent": "VoiceCloneFlow/0.2"}
         )
-        try:
-            with (
-                self.opener(request, timeout=300) as response,
-                temporary.open("wb") as output,
-            ):
-                total = int(response.headers.get("Content-Length", 0))
-                downloaded = 0
+        existing = temporary.stat().st_size if temporary.is_file() else 0
+        if existing:
+            request.add_header("Range", f"bytes={existing}-")
+        with self.opener(request, timeout=300) as response:
+            resumable = existing > 0 and getattr(response, "status", None) == 206
+            downloaded = existing if resumable else 0
+            total = downloaded + int(response.headers.get("Content-Length", 0))
+            with temporary.open("ab" if resumable else "wb") as output:
                 while block := response.read(1024 * 1024):
                     output.write(block)
                     downloaded += len(block)
                     if progress:
                         progress(downloaded, total)
-            os.replace(temporary, destination)
-            return destination
-        finally:
-            temporary.unlink(missing_ok=True)
+        os.replace(temporary, destination)
+        return destination
 
     def install_ffmpeg_archive(self, archive: Path) -> tuple[Path, Path]:
         return self._install_archive_members(archive, ("ffmpeg", "ffprobe"))

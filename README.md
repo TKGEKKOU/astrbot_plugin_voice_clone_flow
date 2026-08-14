@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.2.2-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.3-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统支持)
@@ -243,6 +243,8 @@ VoiceClone Flow 支持将文字消息与语音内容分离处理。
 为避免上游主分支变更导致同一插件版本的安装结果不一致，Linux 源码固定到插件版本已验证的 GPT-SoVITS 提交；升级 VoiceClone Flow 时才会更新该运行时基线。
 
 Linux 的 Python、uv、FFmpeg 和 GPT-SoVITS 文件均安装到 AstrBot 插件数据目录。插件不会自动安装 NVIDIA 驱动、CUDA 驱动或系统动态库；这些属于服务器基础环境。首次 Linux 验收时请关注页面错误详情和 `data/logs/gpt-sovits-api.log`。
+
+安装中断后可直接重试。插件会复用已完整下载的源码、已有虚拟环境和下载缓存；如果 uv 创建的虚拟环境缺少 pip，会自动补全后继续，不需要手动进入服务器目录修复。
 
 ## 快速开始
 
