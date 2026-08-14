@@ -15,4 +15,11 @@
 - 中文文字配合中文或日语语音输出，并保证多段语音顺序。
 - 临时素材定时清理，保留训练成果和已注册音色。
 
+### 文档
+
+- 展示名称更新为 `VoiceClone Flow | 从音视频素材到音色管理`，并明确当前仅支持 GPT-SoVITS。
+- 增加 AstrBot STT Provider 前置配置、完整训练操作、音色登记和 TTS Provider 接入指南。
+- 补充多语言文字与语音消息组合、训练预设、数据清理和常见问题说明。
+- 市场分类调整为“工具”。
+
 [0.1.0]: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow/releases/tag/v0.1.0

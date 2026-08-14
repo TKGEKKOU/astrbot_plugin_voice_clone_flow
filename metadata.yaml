@@ -1,14 +1,15 @@
 name: astrbot_plugin_voice_clone_flow
-display_name: VoiceClone Flow | 从视频到可用音色
-short_desc: 从视频或音频素材到可用 GPT-SoVITS 音色的一站式流水线。
+display_name: VoiceClone Flow | 从音视频素材到音色管理
+short_desc: 从音视频素材处理、训练到 AstrBot 音色管理的一站式 GPT-SoVITS 工作台。
 desc: >-
-  自动完成音频提取、人声分离、语音切分、STT 标注、片段审核、
-  GPT-SoVITS 训练、音色登记和 AstrBot TTS Provider 接入。
+  一站式完成音视频素材的音频提取、人声分离、语音切分、STT 标注、片段审核、
+  GPT-SoVITS 训练、音色登记和 AstrBot TTS Provider 接入。支持多语言文字与语音消息组合。
 version: 0.1.0
 author: TKGEKKOU
 repo: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow
 astrbot_version: ">=4.24,<5"
 license: AGPL-3.0
+category: 工具
 support_platforms:
   - aiocqhttp
 social_link: https://github.com/TKGEKKOU
@@ -16,3 +17,5 @@ tags:
   - GPT-SoVITS
   - voice-clone
   - TTS
+  - STT
+  - pages
