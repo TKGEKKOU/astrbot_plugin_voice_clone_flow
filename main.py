@@ -31,6 +31,7 @@ if __package__:
     from .voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from .voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from .voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from .voice_clone_flow.platform_runtime import detect_platform_profile
 else:
     from voice_clone_flow import PLUGIN_NAME
     from voice_clone_flow.astrbot_api import ASRTestError, list_stt_providers, run_stt_test
@@ -52,6 +53,7 @@ else:
     from voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from voice_clone_flow.platform_runtime import detect_platform_profile
 
 
 class VoiceCloneFlowPlugin(Star):
@@ -215,15 +217,19 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"removed": self.separator_resources.delete_managed()})
 
     async def page_runtime_status(self):
+        platform_profile = detect_platform_profile()
         custom = inspect_separator_model(self.separator_model_path)
         separator = self.separator_resources.status()
         separator["usable"] = custom.usable or bool(separator["ready"])
         separator["active_model"] = custom.configured_path if custom.usable else separator["resolved_model"]
         separator["source"] = "configured" if custom.usable else "managed" if separator["ready"] else "missing"
-        return json_response({"ffmpeg": self.ffmpeg_resources.status(), "separator": separator})
+        return json_response({"platform": platform_profile.to_dict(), "ffmpeg": self.ffmpeg_resources.status(), "separator": separator})
 
     async def page_ffmpeg_install(self):
-        return json_response({**self.ffmpeg_resources.status(), "started": self.ffmpeg_resources.start_install()})
+        try:
+            return json_response({**self.ffmpeg_resources.status(), "started": self.ffmpeg_resources.start_install()})
+        except RuntimeError as exc:
+            return error_response(str(exc), status_code=409)
 
     async def page_ffmpeg_delete(self):
         if self.ffmpeg_resources.installing:
@@ -241,7 +247,7 @@ class VoiceCloneFlowPlugin(Star):
         try:
             started = self.gpt_install.start_install(url or self.gpt_config.values().get("download_url"))
             return json_response({**self.gpt_install.status(), "started": started}, status_code=202)
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             return error_response(str(exc), status_code=400)
 
     async def page_gpt_install_cancel(self):

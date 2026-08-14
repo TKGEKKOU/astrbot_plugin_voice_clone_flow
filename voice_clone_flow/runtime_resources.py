@@ -8,12 +8,17 @@ import os
 import string
 from pathlib import Path
 
+from .platform_runtime import PlatformProfile, detect_platform_profile
+
 FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
 
 class FFmpegResourceManager:
     def __init__(self, data_dir: Path, configured_path: str = "", download_url: str = FFMPEG_URL,
-                 which=shutil.which, common_paths: tuple[Path, ...] | None = None) -> None:
+                 which=shutil.which, common_paths: tuple[Path, ...] | None = None,
+                 platform_profile: PlatformProfile | None = None) -> None:
+        self.platform_profile = platform_profile or detect_platform_profile(which=which)
+        self._profile_injected = platform_profile is not None
         self.root = Path(data_dir) / "runtime" / "ffmpeg"
         self.managed_ffmpeg = self.root / "ffmpeg.exe"
         self.managed_ffprobe = self.root / "ffprobe.exe"
@@ -36,13 +41,13 @@ class FFmpegResourceManager:
     def resolve(self) -> Path | None:
         if self.configured_path and Path(self.configured_path).is_file():
             return Path(self.configured_path).resolve()
-        if self.managed_ffmpeg.is_file():
+        if self.platform_profile.system == "windows" and self.managed_ffmpeg.is_file():
             return self.managed_ffmpeg.resolve()
         found = self.which("ffmpeg")
         if found:
             return Path(found)
         common = next((path.resolve() for path in self.common_paths if path.is_file()), None)
-        return common or self._detect_portable_windows_ffmpeg()
+        return common or (self._detect_portable_windows_ffmpeg() if self.platform_profile.system == "windows" else None)
 
     def _detect_portable_windows_ffmpeg(self) -> Path | None:
         patterns = (
@@ -65,11 +70,23 @@ class FFmpegResourceManager:
         if path:
             source = "configured" if self.configured_path and Path(self.configured_path).is_file() else "managed" if self.managed_ffmpeg.is_file() and path == self.managed_ffmpeg.resolve() else "system"
         return {"ready": bool(path), "installing": self.installing, "error": self.error,
+                "platform": self.platform_profile.system,
+                "can_install": self.platform_profile.can_download_managed_ffmpeg,
+                "install_hint": self.platform_profile.install_hints.get("ffmpeg", ""),
                 "resolved_path": str(path or self.managed_ffmpeg), "managed_path": str(self.managed_ffmpeg),
                 "source": source, "downloaded_bytes": self.downloaded_bytes, "total_bytes": self.total_bytes,
                 "progress_percent": round(self.downloaded_bytes * 100 / self.total_bytes) if self.total_bytes else 0}
 
     def start_install(self) -> bool:
+        if not self._profile_injected:
+            self.platform_profile = detect_platform_profile(which=self.which)
+        if self.platform_profile.system == "linux":
+            if self.resolve():
+                return False
+            raise RuntimeError(
+                "Linux 上由系统管理 FFmpeg，请在服务器执行："
+                + self.platform_profile.install_hints.get("ffmpeg", "sudo apt install -y ffmpeg")
+            )
         with self._lock:
             if self.installing:
                 return False

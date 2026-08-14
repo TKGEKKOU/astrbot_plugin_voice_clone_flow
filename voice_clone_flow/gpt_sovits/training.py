@@ -125,7 +125,7 @@ class TrainingService:
 
     def _ffmpeg_path(self) -> str:
         bundled = self.project_root / "runtime" / "ffmpeg" / "ffmpeg.exe"
-        return str(bundled) if bundled.is_file() else "ffmpeg"
+        return str(bundled) if os.name == "nt" and bundled.is_file() else (shutil.which("ffmpeg") or "ffmpeg")
 
     # ------------------------------------------------------------------
     # training orchestration

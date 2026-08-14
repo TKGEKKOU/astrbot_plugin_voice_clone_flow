@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .config import GPTSoVITSConfig, InstallationProbe
+from ..platform_runtime import PlatformProfile, detect_platform_profile
 
 
 class GPTSoVITSNotInstalled(RuntimeError):
@@ -37,11 +38,13 @@ class GPTSoVITSAdapter:
         project_root: Path,
         opener: Callable = urlopen,
         sleeper: Callable = time.sleep,
+        platform_profile: PlatformProfile | None = None,
     ) -> None:
         self.config = config
         self.project_root = Path(project_root).resolve()
         self.opener = opener
         self.sleeper = sleeper
+        self.platform_profile = platform_profile or detect_platform_profile()
         self._process: subprocess.Popen | None = None
         self._job = None
         self._lock = threading.Lock()
@@ -118,6 +121,8 @@ class GPTSoVITSAdapter:
         """Terminate any process still serving the API port (orphans from
         crashed sessions or untracked launcher instances)."""
 
+        if self.platform_profile.system != "windows":
+            return
         for pid in self._listener_pids(self.port):
             try:
                 subprocess.run(
@@ -214,6 +219,9 @@ class GPTSoVITSAdapter:
         env["PYTHONUNBUFFERED"] = "1"
         return env
 
+    def _process_options(self) -> dict[str, bool]:
+        return {"start_new_session": True} if self.platform_profile.system == "linux" else {}
+
     def ensure_service(self) -> None:
         """Start the API service if it is not already running and healthy."""
 
@@ -247,6 +255,7 @@ class GPTSoVITSAdapter:
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 env=env,
+                **self._process_options(),
             )
             self._attach_kill_on_close_job(self._process)
             # Cold start loads the default v2Pro weights + vocoder, which can

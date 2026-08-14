@@ -33,7 +33,7 @@ class InstallationProbe:
         return bool(self.install_dir and self.python_path and self.api_script)
 
 
-def probe_installation(install_dir: Path | None) -> InstallationProbe:
+def probe_installation(install_dir: Path | None, explicit_python: Path | None = None) -> InstallationProbe:
     """Validate a GPT-SoVITS install directory and locate its python + API
     entrypoint. Returns a probe that is ``ok`` when everything needed to
     launch the API service is present."""
@@ -44,11 +44,14 @@ def probe_installation(install_dir: Path | None) -> InstallationProbe:
     if not install_dir.is_dir():
         return InstallationProbe(install_dir, None, None, None, f"目录不存在：{install_dir}")
 
-    python_path = install_dir / "runtime" / "python.exe"
-    if not python_path.is_file():
-        python_path = install_dir / "python.exe"
-    if not python_path.is_file():
-        python_path = None
+    candidates = (
+        explicit_python,
+        install_dir / ".venv" / "bin" / "python",
+        install_dir / "venv" / "bin" / "python",
+        install_dir / "runtime" / "python.exe",
+        install_dir / "python.exe",
+    )
+    python_path = next((path for path in candidates if path and path.is_file()), None)
 
     api_v2 = install_dir / "api_v2.py"
     api_v1 = install_dir / "api.py"
@@ -62,7 +65,7 @@ def probe_installation(install_dir: Path | None) -> InstallationProbe:
     if not python_path:
         return InstallationProbe(
             install_dir, None, api_script, api_version,
-            "未找到 Python 运行环境（runtime\\python.exe 或 python.exe）",
+            "未找到 GPT-SoVITS Python 环境（.venv/bin/python、venv/bin/python 或 runtime/python.exe）",
         )
     if not api_script:
         return InstallationProbe(

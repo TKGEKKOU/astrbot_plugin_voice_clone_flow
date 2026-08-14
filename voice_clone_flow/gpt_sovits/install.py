@@ -21,6 +21,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .config import GPTSoVITSConfig, probe_installation
+from ..platform_runtime import PlatformProfile, detect_platform_profile
+from .linux_runtime import LinuxPythonEnvironment
+
+
+LINUX_SOURCE_URL = "https://github.com/RVC-Boss/GPT-SoVITS/archive/refs/heads/main.zip"
 
 
 # Content inside the integrated package that the project never uses. The
@@ -100,12 +105,15 @@ class _InstallState:
 
 
 class GPTSoVITSInstallManager:
-    def __init__(self, project_root: Path, config: GPTSoVITSConfig) -> None:
+    def __init__(self, project_root: Path, config: GPTSoVITSConfig,
+                 platform_profile: PlatformProfile | None = None) -> None:
         self.project_root = Path(project_root).resolve()
         self.config = config
         self.install_dir = self.project_root / "runtime" / "gpt_sovits"
         self.patches_dir = Path(__file__).resolve().parents[2] / "runtime_patches"
         self.bundled_7zr = self.patches_dir / "tools" / "7zr.exe"
+        self.platform_profile = platform_profile or detect_platform_profile()
+        self._profile_injected = platform_profile is not None
         self.download_dir = self.project_root / "downloads" / "gpt_sovits"
         self.state = _InstallState()
         self._lock = threading.Lock()
@@ -120,6 +128,9 @@ class GPTSoVITSInstallManager:
             "patches_dir": str(self.patches_dir) if self.patches_dir.is_dir() else "",
             "external_configured": bool(self.config.values()["install_dir"]),
             "download_url": self.config.values().get("download_url"),
+            "platform": self.platform_profile.system,
+            "architecture": self.platform_profile.architecture,
+            "install_strategy": "linux_source" if self.platform_profile.system == "linux" else "windows_bundle",
         }
 
     def remove_install(self) -> dict:
@@ -137,7 +148,9 @@ class GPTSoVITSInstallManager:
         with self._lock:
             if self.state.installing:
                 return False
-            url = (url or "").strip()
+            if not self._profile_injected:
+                self.platform_profile = detect_platform_profile()
+            url = self._effective_download_url((url or "").strip())
             if not url:
                 raise ValueError("请提供 GPT-SoVITS 整合包下载地址（7z 或 zip）")
             self.state.installing = True
@@ -152,6 +165,11 @@ class GPTSoVITSInstallManager:
             daemon=True,
         ).start()
         return True
+
+    def _effective_download_url(self, configured_url: str) -> str:
+        if self.platform_profile.system == "linux":
+            return LINUX_SOURCE_URL
+        return configured_url
 
     def cancel_install(self) -> bool:
         if not self.state.installing:
@@ -168,6 +186,8 @@ class GPTSoVITSInstallManager:
                 raise GPTSoVITSInstallCancelled()
             self.state.set_progress("extracting", archive.name, 0, 0, detail="准备解压…")
             self._extract(archive)
+            if self.platform_profile.system == "linux":
+                self._prepare_linux_runtime()
             self.state.set_progress("patching", "", 0, 0, detail="准备应用项目补丁…")
             self._apply_patches()
             self._configure_v2pro_default()
@@ -196,6 +216,18 @@ class GPTSoVITSInstallManager:
             self.state.installing = False
             self.state.cancel_requested.clear()
             self.state.started_at = None
+
+    def _prepare_linux_runtime(self) -> None:
+        self.state.set_progress("python", "", 0, 3, detail="创建独立 Python 环境")
+        environment = LinuxPythonEnvironment(self.install_dir)
+        python = environment.ensure()
+        self.state.set_progress("python", "requirements.txt", 1, 3, detail="安装 GPT-SoVITS 依赖")
+        environment.install_requirements(self.install_dir / "requirements.txt")
+        downloader = self.install_dir / "tools" / "download_models.py"
+        if downloader.is_file():
+            self.state.set_progress("models", downloader.name, 2, 3, detail="下载预训练模型")
+            subprocess.run([str(python), str(downloader)], cwd=str(self.install_dir), check=True)
+        self.state.set_progress("models", "", 3, 3, detail="Linux 运行环境准备完成")
 
     def _obtain_archive(self, url: str) -> Path:
         filename = Path(urlsplit(url).path).name or "gpt-sovits.zip"
@@ -330,16 +362,7 @@ class GPTSoVITSInstallManager:
         # the previous engine directory (which also contained 7zr.exe) was
         # moved away or deleted; fall back to the engine's own copy, then to
         # a system 7-Zip.
-        bundled_7zr = (self.bundled_7zr, self.install_dir / "tools" / "7zr.exe")
-        seven_zip = next(
-            (str(candidate) for candidate in bundled_7zr if candidate.is_file()),
-            shutil.which("7z") or shutil.which("7za"),
-        )
-        if not seven_zip:
-            raise RuntimeError(
-                "检测到 7z 整合包，但未找到 7-Zip；请安装 7-Zip 后重试，"
-                "或手动解压到 runtime/gpt_sovits 后重新检测。"
-            )
+        seven_zip = self._resolve_7zip()
         temporary = self.install_dir.with_name(self.install_dir.name + ".tmp")
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -390,11 +413,29 @@ class GPTSoVITSInstallManager:
             if temporary.exists():
                 shutil.rmtree(temporary)
 
+    def _resolve_7zip(self) -> str:
+        if self.platform_profile.system == "linux":
+            seven_zip = self.platform_profile.archive_tool or shutil.which("7z") or shutil.which("7za")
+            if seven_zip:
+                return str(seven_zip)
+            raise RuntimeError(
+                "Linux 缺少 7-Zip，请在服务器执行："
+                + self.platform_profile.install_hints.get("7zip", "sudo apt install -y p7zip-full")
+            )
+        bundled = (self.bundled_7zr, self.install_dir / "tools" / "7zr.exe")
+        seven_zip = next((str(path) for path in bundled if path.is_file()), None)
+        seven_zip = seven_zip or shutil.which("7z") or shutil.which("7za")
+        if not seven_zip:
+            raise RuntimeError("未找到 7-Zip，请安装 7-Zip 后重试。")
+        return str(seven_zip)
+
     def _apply_patches(self) -> None:
         if not self.patches_dir.is_dir():
             self.state.set_progress("patching", "", 1, 1, detail="无需应用补丁")
             return
         files = [source for source in self.patches_dir.rglob("*") if source.is_file()]
+        if self.platform_profile.system == "linux":
+            files = [source for source in files if source.suffix.lower() != ".exe" and "runtime" not in source.relative_to(self.patches_dir).parts]
         for index, source in enumerate(files, start=1):
             if self.state.cancel_requested.is_set():
                 raise GPTSoVITSInstallCancelled()

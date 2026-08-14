@@ -23,3 +23,10 @@
 - 市场分类调整为“工具”。
 
 [0.1.0]: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow/releases/tag/v0.1.0
+# 0.2.0
+
+- 新增 Windows/Linux 自动平台检测，并在下载、启动和训练操作前重新检查环境。
+- Windows 保留 v2Pro 整合包流程；Linux 改用 GPT-SoVITS 官方源码和插件独立 Python 虚拟环境。
+- Linux 自动使用当前 Python 创建 `.venv`，失败时通过已安装的 `uv` 获取 Python 3.11。
+- Linux 不再执行 `7zr.exe`、`taskkill` 或 Windows runtime 补丁。
+- FFmpeg、服务进程、训练路径和音色目录操作完成跨平台适配。
