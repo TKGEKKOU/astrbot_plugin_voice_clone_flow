@@ -1,7 +1,9 @@
 <div align="center">
 
-# VoiceClone Flow
-
+<h1>
+  <img src="./logo.png" alt="VoiceClone Flow Logo" width="72" align="middle">
+  VoiceClone Flow
+</h1>
 **从音视频素材到音色管理**
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
