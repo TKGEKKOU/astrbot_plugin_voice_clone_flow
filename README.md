@@ -9,7 +9,7 @@
 [![Version](https://img.shields.io/badge/version-0.1.0-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078d4)](#运行要求)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统支持)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-555)](LICENSE)
 
 [功能](#核心能力) · [架构](#架构总览) · [流程](#处理链路) · [安装](#快速开始) · [音色接入](#音色管理与-provider-接入) · [安全](#声音授权与安全)
