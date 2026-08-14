@@ -12,7 +12,11 @@ from pathlib import Path
 from .platform_runtime import PlatformProfile, detect_platform_profile
 from .linux_tools import LinuxToolInstaller, ffmpeg_download_url
 
-FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+FFMPEG_WINDOWS_URLS = (
+    "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
+    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+)
+FFMPEG_URL = FFMPEG_WINDOWS_URLS[0]
 
 
 class FFmpegResourceManager:
@@ -162,14 +166,17 @@ class FFmpegResourceManager:
         archive = self.root.parent / "ffmpeg.zip.part"
         try:
             self.root.mkdir(parents=True, exist_ok=True)
+            sources = tuple(
+                dict.fromkeys((self.download_url, *FFMPEG_WINDOWS_URLS))
+            )
             last_error: Exception | None = None
-            for attempt in range(1, 4):
+            for index, source in enumerate(sources, start=1):
                 try:
                     request = urllib.request.Request(
-                        self.download_url,
+                        source,
                         headers={"User-Agent": "VoiceCloneFlow/0.2", "Accept": "*/*"},
                     )
-                    with urllib.request.urlopen(request, timeout=60) as response:
+                    with urllib.request.urlopen(request, timeout=20) as response:
                         self.total_bytes = int(response.headers.get("Content-Length", 0))
                         self.downloaded_bytes = 0
                         with archive.open("wb") as target:
@@ -177,12 +184,18 @@ class FFmpegResourceManager:
                                 target.write(block)
                                 self.downloaded_bytes += len(block)
                     last_error = None
+                    self.error = ""
                     break
                 except (TimeoutError, OSError) as exc:
                     last_error = exc
-                    self.error = f"FFmpeg 下载读取超时，正在重试 ({attempt}/3)"
+                    if index < len(sources):
+                        self.error = (
+                            f"FFmpeg 下载源 {index} 无响应，正在切换备用源"
+                        )
             if last_error is not None:
-                raise RuntimeError(f"FFmpeg 下载失败：{last_error}") from last_error
+                raise RuntimeError(
+                    f"所有 FFmpeg 下载源均不可用：{last_error}"
+                ) from last_error
             with zipfile.ZipFile(archive) as package:
                 for wanted, target in (
                     ("ffmpeg.exe", self.managed_ffmpeg),
