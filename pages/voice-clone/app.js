@@ -119,11 +119,13 @@ function renderFfmpegManualHelp(resource) {
 function renderResource(prefix, resource) {
   const ready = Boolean(resource.ready || resource.usable);
   const installing = Boolean(resource.installing);
-  $(`${prefix}State`).textContent = `${prefix === "ffmpeg" ? "FFmpeg" : "人声分离模型"} ${installing ? `下载中 ${resource.progress_percent || 0}%` : ready ? "已就绪" : "未安装"}`;
+  const probing = Boolean(resource.probing);
+  const label = prefix === "ffmpeg" ? "FFmpeg" : "人声分离模型";
+  $(`${prefix}State`).textContent = `${label} ${installing ? (probing ? "正在测速选择最快下载源" : `下载中 ${resource.progress_percent || 0}%`) : ready ? "已就绪" : "未安装"}`;
   $(`${prefix}State`).dataset.state = installing ? "loading" : ready ? "ready" : "error";
   $(`${prefix}Path`).textContent = resource.resolved_path || resource.active_model || resource.resolved_model || "";
   const percent = Number.isFinite(resource.progress_percent) ? resource.progress_percent : (resource.total_bytes ? Math.round(resource.downloaded_bytes * 100 / resource.total_bytes) : 0);
-  $(`${prefix}Progress`).textContent = resource.error || (installing ? (resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}`);
+  $(`${prefix}Progress`).textContent = resource.error || (installing ? (probing ? "正在并行测速多个下载源，自动选择最快的一个…" : resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}`);
   if (prefix === "ffmpeg") renderFfmpegManualHelp(resource);
   $(`${prefix}ProgressBar`).style.transform = `scaleX(${Math.max(0, Math.min(100, percent)) / 100})`;
   const track = $(`${prefix}ProgressTrack`);

@@ -6,6 +6,18 @@
     "default": "",
     "_special": "select_provider_stt"
   },
+  "ffmpeg_path": {
+    "type": "string",
+    "description": "FFmpeg \u53ef\u6267\u884c\u6587\u4ef6\u8def\u5f84\uff08\u53ef\u9009\uff09",
+    "hint": "\u7559\u7a7a\u65f6\u81ea\u52a8\u67e5\u627e\u7cfb\u7edf FFmpeg\uff0c\u627e\u4e0d\u5230\u65f6\u53ef\u4ee5\u5728\u63d2\u4ef6\u9875\u9762\u4e0b\u8f7d\u3002\u4e5f\u53ef\u586b\u5199\u672c\u5730 ffmpeg.exe \u5b8c\u6574\u8def\u5f84\u3002",
+    "default": ""
+  },
+  "ffmpeg_download_url": {
+    "type": "string",
+    "description": "FFmpeg \u4e0b\u8f7d\u5730\u5740\uff08\u53ef\u9009\uff09",
+    "hint": "\u7559\u7a7a\u4f7f\u7528\u9ed8\u8ba4\u6e90\uff08BtbN / Gyan\uff09\u3002\u56fd\u5185\u7f51\u7edc\u8f83\u6162\u65f6\u53ef\u586b\u5199\u52a0\u901f\u955c\u50cf\uff0c\u4f8b\u5982 https://ghfast.top/https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
+    "default": ""
+  },
   "gpt_sovits": {
     "type": "object",
     "description": "GPT-SoVITS \u8bed\u97f3\u540e\u7aef",
