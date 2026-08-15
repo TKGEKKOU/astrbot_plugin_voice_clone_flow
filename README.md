@@ -258,6 +258,26 @@ Linux 的 Python、uv、FFmpeg 和 GPT-SoVITS 文件均安装到 AstrBot 插件�
 - 足够的磁盘空间用于运行包、模型和训练成果
 - 建议使用 NVIDIA GPU 进行 GPT-SoVITS 训练和推理
 
+#### 推理系统需求
+
+| 最低配置 | 推荐配置 |
+| --- | --- |
+| **处理器：** Intel Core i3-6100、AMD Ryzen 3 1200 或同等性能处理器 | **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 |
+| **内存：** 4GB RAM | **内存：** 8GB RAM |
+| **显卡：** NVIDIA GeForce GTX 1650 4GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 2060 6GB 或同等性能显卡 |
+| **存储空间：** Linux 需要 12GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+
+#### 训练系统需求
+
+| 最低配置 | 推荐配置 |
+| --- | --- |
+| **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 | **处理器：** Intel Core i5-12400、AMD Ryzen 5 5600 或同等性能处理器 |
+| **内存：** 8GB RAM | **内存：** 16GB RAM |
+| **显卡：** NVIDIA GeForce GTX 1660 SUPER 6GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 4060 8GB 或同等性能显卡 |
+| **存储空间：** Linux 需要 15GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+
+推荐使用 Windows。Linux 部分环境可能需要手动配置 NVIDIA 驱动、CUDA 或系统依赖。最低配置以能够完成一次任务为基准，处理速度可能较慢；硬件配置越高，处理速度通常越快。
+
 FFmpeg、人声分离模型和 GPT-SoVITS 运行包均按需下载，不包含在插件仓库或插件市场安装包中。
 
 ### 安装
