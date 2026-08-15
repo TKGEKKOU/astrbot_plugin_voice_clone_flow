@@ -107,6 +107,7 @@ class VoiceCloneFlowPlugin(Star):
             self.data_dir,
             str(config.get("ffmpeg_path", "")).strip(),
             str(config.get("ffmpeg_download_url", "")).strip() or None,
+            configured_sha256=str(config.get("ffmpeg_sha256", "")).strip(),
         )
         context.register_web_api(
             f"/{PLUGIN_NAME}/debug", self.debug_page, ["GET"], "VoiceClone Flow development console"

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import string
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -14,27 +17,32 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .platform_runtime import PlatformProfile, detect_platform_profile
-from .linux_tools import LinuxToolInstaller, ffmpeg_download_url
+from .linux_tools import LinuxToolInstaller
 
+# 下载源使用 BilibiliDown 类似的模板：{os}、{arch}、{exeSuffix}。
+# 当前默认 Windows 使用 Gyan Essentials；Linux 使用 John Van Sickle 静态构建。
 FFMPEG_WINDOWS_URLS = (
-    "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
     "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
+)
+FFMPEG_LINUX_URL_TEMPLATES = (
+    "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz",
 )
 FFMPEG_URL = FFMPEG_WINDOWS_URLS[0]
-# 国内可访问的 GitHub Releases 加速镜像。作为测速候选自动参与排序，
-# 实测吞吐落后或不可达的源会被自然淘汰，不影响官方源正常使用。
+# 国内可访问的 GitHub Releases 加速镜像，仅用于 GitHub 候选源。
 GITHUB_MIRROR_PREFIXES = (
     "https://ghfast.top/",
     "https://gh-proxy.com/",
 )
-FFMPEG_WINDOWS_MIRROR_URLS = tuple(
-    prefix + FFMPEG_URL for prefix in GITHUB_MIRROR_PREFIXES
-)
 FFMPEG_DOWNLOAD_TIMEOUT_SECONDS = 60
-# 测速参数：并行探测每个候选源下载前 512KB 的实测吞吐，超时 10 秒。
 FFMPEG_PROBE_BYTES = 512 * 1024
 FFMPEG_PROBE_TIMEOUT_SECONDS = 10
 FFMPEG_PROBE_CACHE_TTL_SECONDS = 300
+SHA256_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
+
+
+class FFmpegSourceError(RuntimeError):
+    """A candidate archive failed integrity or format validation."""
 
 
 class FFmpegResourceManager:
@@ -46,6 +54,8 @@ class FFmpegResourceManager:
         which=shutil.which,
         common_paths: tuple[Path, ...] | None = None,
         platform_profile: PlatformProfile | None = None,
+        *,
+        configured_sha256: str = "",
     ) -> None:
         self.platform_profile = platform_profile or detect_platform_profile(which=which)
         self._profile_injected = platform_profile is not None
@@ -54,25 +64,22 @@ class FFmpegResourceManager:
         self.managed_ffmpeg = self.root / f"ffmpeg{suffix}"
         self.managed_ffprobe = self.root / f"ffprobe{suffix}"
         self.configured_path = configured_path
-        self.download_url = download_url or FFMPEG_URL
-        self._custom_download_url = bool(download_url)
+        self.download_url = download_url.strip() if download_url else ""
+        self._custom_download_url = bool(self.download_url)
+        self.configured_sha256 = configured_sha256.strip().lower()
         self.which = which
-        self.part_file = self.root.parent / "ffmpeg.zip.part"
-        self.part_meta_file = self.root.parent / "ffmpeg.zip.part.meta"
-        local = Path(os.environ.get("LOCALAPPDATA", ""))
-        program_files = Path(os.environ.get("ProgramFiles", ""))
-        self.common_paths = common_paths or (
-            local / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe",
-            program_files / "ffmpeg" / "bin" / "ffmpeg.exe",
-            Path("C:/ffmpeg/bin/ffmpeg.exe"),
-        )
+        self.part_file = self.root.parent / "ffmpeg.archive.part"
+        self.part_meta_file = self.root.parent / "ffmpeg.archive.part.meta"
+        self.common_paths = common_paths or self._default_common_paths()
         self.installing = False
         self.probing = False
         self.error = ""
+        self.verification = "unverified"
         self.downloaded_bytes = 0
         self.total_bytes = 0
         self._lock = threading.Lock()
         self._speed_cache: dict[str, tuple[float, float]] = {}
+        self._active_expected_sha256 = ""
 
     def resolve(self) -> Path | None:
         if self.configured_path and Path(self.configured_path).is_file():
@@ -95,8 +102,36 @@ class FFmpegResourceManager:
             else None
         )
 
+    def _default_common_paths(self) -> tuple[Path, ...]:
+        roots = {
+            Path.cwd(),
+            Path(sys.executable).resolve().parent,
+            Path(__file__).resolve().parents[2],
+        }
+        if self.platform_profile.system == "windows":
+            local = Path(os.environ.get("LOCALAPPDATA", ""))
+            program_files = Path(os.environ.get("ProgramFiles", ""))
+            roots.update(
+                {
+                    local / "Microsoft" / "WinGet" / "Links",
+                    program_files / "ffmpeg" / "bin",
+                    Path("C:/ffmpeg/bin"),
+                }
+            )
+        candidates: list[Path] = []
+        for root in roots:
+            candidates.extend(
+                (
+                    root / "ffmpeg.exe" if self.platform_profile.system == "windows" else root / "ffmpeg",
+                    root / "ffmpeg" / "bin" / ("ffmpeg.exe" if self.platform_profile.system == "windows" else "ffmpeg"),
+                    root / "tools" / "ffmpeg" / "bin" / ("ffmpeg.exe" if self.platform_profile.system == "windows" else "ffmpeg"),
+                )
+            )
+        return tuple(dict.fromkeys(candidates))
+
     def _detect_portable_windows_ffmpeg(self) -> Path | None:
         patterns = (
+            "ffmpeg.exe",
             "ffmpeg/bin/ffmpeg.exe",
             "tools/ffmpeg/bin/ffmpeg.exe",
         )
@@ -166,24 +201,16 @@ class FFmpegResourceManager:
             "install_hint": self.platform_profile.install_hints.get("ffmpeg", ""),
             "resolved_path": str(display_path),
             "managed_path": str(self.managed_ffmpeg),
+            "verification": self.verification,
+            "download_templates": list(
+                FFMPEG_WINDOWS_URLS
+                if self.platform_profile.system == "windows"
+                else FFMPEG_LINUX_URL_TEMPLATES
+            ),
             "manual_download_urls": [
-                {
-                    "name": "BtbN FFmpeg（官方主源）",
-                    "url": FFMPEG_WINDOWS_URLS[0],
-                },
-                {
-                    "name": "BtbN 国内加速（ghfast.top 镜像）",
-                    "url": FFMPEG_WINDOWS_MIRROR_URLS[0],
-                },
-                {
-                    "name": "BtbN 国内加速（gh-proxy.com 镜像）",
-                    "url": FFMPEG_WINDOWS_MIRROR_URLS[1],
-                },
-                {
-                    "name": "Gyan FFmpeg（官方备用源）",
-                    "url": FFMPEG_WINDOWS_URLS[1],
-                },
-            ] if self.platform_profile.system == "windows" else [],
+                {"name": "FFmpeg 下载源", "url": url}
+                for url in self._source_candidates()
+            ] if self.platform_profile.system in {"windows", "linux"} else [],
             "source": source,
             "downloaded_bytes": downloaded,
             "total_bytes": total,
@@ -213,9 +240,6 @@ class FFmpegResourceManager:
         return True
 
     def _install(self) -> None:
-        if self.platform_profile.system == "linux":
-            self._install_linux()
-            return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             try:
@@ -225,9 +249,11 @@ class FFmpegResourceManager:
                 self.error = str(exc)
                 return
             try:
-                self._extract_windows()
+                if self.platform_profile.system == "windows":
+                    self._extract_windows()
+                else:
+                    LinuxToolInstaller(self.root).install_ffmpeg_archive(self.part_file)
             except Exception as exc:
-                # 压缩包损坏（例如断点续传遇到上游更新文件），清除断点后全量重下
                 self.part_file.unlink(missing_ok=True)
                 self.part_meta_file.unlink(missing_ok=True)
                 self.error = f"下载包损坏，已清除断点缓存：{exc}"
@@ -238,33 +264,95 @@ class FFmpegResourceManager:
             self.installing = False
 
     def _download_loop(self) -> None:
-        """并行测速后按实测吞吐排序尝试各下载源，第一个成功的源胜出。
-
-        用户显式配置的下载地址始终排在最前，不参与测速降级；
-        其余候选（官方源与国内加速镜像）按实测速度自动排序。
-        """
-        defaults = tuple(
-            dict.fromkeys((*FFMPEG_WINDOWS_URLS, *FFMPEG_WINDOWS_MIRROR_URLS))
-        )
-        configured = self.download_url if self._custom_download_url else ""
-        ordered_defaults = self._rank_sources(defaults)
+        """并行测速后按实测吞吐排序尝试各下载源，第一个成功的源胜出。"""
+        defaults = self._source_candidates()
+        configured = (self._expand_url(self.download_url),) if self._custom_download_url else ()
+        candidates = tuple(dict.fromkeys((*configured, *defaults)))
         if configured:
-            ordered = [configured, *[u for u in ordered_defaults if u != configured]]
+            ordered_defaults = self._rank_sources(tuple(u for u in candidates if u not in configured))
+            ordered = [*configured, *ordered_defaults]
         else:
-            ordered = ordered_defaults
+            ordered = self._rank_sources(candidates)
         last_error: Exception | None = None
         for index, source in enumerate(ordered, start=1):
             try:
                 self._download_windows(source)
+                self._verify_archive(source)
                 last_error = None
                 self.error = ""
                 break
-            except (TimeoutError, OSError, urllib.error.HTTPError) as exc:
+            except (TimeoutError, OSError, urllib.error.HTTPError, FFmpegSourceError) as exc:
                 last_error = exc
                 if index < len(ordered):
-                    self.error = f"FFmpeg 下载源 {index} 无响应，正在切换备用源"
+                    self.error = f"FFmpeg 下载源 {index} 不可用，正在切换下一个源"
         if last_error is not None:
             raise RuntimeError(f"所有 FFmpeg 下载源均不可用：{last_error}") from last_error
+
+    def _source_candidates(self) -> tuple[str, ...]:
+        if self.platform_profile.system == "linux":
+            templates = FFMPEG_LINUX_URL_TEMPLATES
+        else:
+            templates = FFMPEG_WINDOWS_URLS
+            templates += tuple(
+                prefix + FFMPEG_WINDOWS_URLS[1] for prefix in GITHUB_MIRROR_PREFIXES
+            )
+        return tuple(dict.fromkeys(self._expand_url(url) for url in templates))
+
+    def _expand_url(self, template: str) -> str:
+        system = "win" if self.platform_profile.system == "windows" else "linux"
+        architecture = "amd64" if self.platform_profile.architecture == "x86_64" else "arm64"
+        suffix = self.platform_profile.executable_suffix
+        return template.replace("{os}", system).replace("{arch}", architecture).replace(
+            "{exeSuffix}", suffix
+        )
+
+    def _expected_sha256(self, source: str) -> str:
+        configured_source = (
+            self._expand_url(self.download_url) if self._custom_download_url else ""
+        )
+        if (
+            self.configured_sha256
+            and source == configured_source
+            and SHA256_RE.fullmatch(self.configured_sha256)
+        ):
+            return self.configured_sha256
+        meta = self._read_part_meta()
+        if meta and meta.get("url") == source and SHA256_RE.fullmatch(str(meta.get("sha256", ""))):
+            return str(meta["sha256"]).lower()
+        try:
+            request = urllib.request.Request(
+                source + ".sha256", headers={"User-Agent": "VoiceCloneFlow/0.2"}
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                match = SHA256_RE.search(response.read(4096).decode("ascii", errors="ignore"))
+                return match.group(0).lower() if match else ""
+        except (OSError, TimeoutError, urllib.error.HTTPError):
+            return ""
+
+    def _verify_archive(self, source: str) -> None:
+        expected = self._expected_sha256(source)
+        self._active_expected_sha256 = expected
+        if not expected:
+            self.verification = "unverified"
+            return
+        digest = hashlib.sha256()
+        with self.part_file.open("rb") as archive:
+            while block := archive.read(1024 * 1024):
+                digest.update(block)
+        actual = digest.hexdigest()
+        if actual != expected:
+            self.verification = "failed"
+            raise FFmpegSourceError(
+                f"FFmpeg 下载包 SHA-256 校验失败：期望 {expected}，实际 {actual}"
+            )
+        meta = self._read_part_meta() or {}
+        self._write_part_meta(
+            source,
+            str(meta.get("etag", "")),
+            self.downloaded_bytes,
+            actual,
+        )
+        self.verification = "verified"
 
     def _rank_sources(self, urls: tuple[str, ...]) -> list[str]:
         """并行探测各候选源的实测下载吞吐，按速度从快到慢排序。"""
@@ -321,7 +409,7 @@ class FFmpegResourceManager:
         return speed
 
     def _download_windows(self, url: str) -> None:
-        """单源下载，支持基于 Range 的断点续传。
+        """下载单个平台归档，支持基于 Range 的断点续传。
 
         断点仅在源地址一致时复用（不同源内容不同，不得混用）。
         ETag/Last-Modified 与断点大小记录在 meta 文件中，用于识别上游更新。
@@ -403,30 +491,18 @@ class FFmpegResourceManager:
         except (OSError, ValueError):
             return None
 
-    def _write_part_meta(self, url: str, etag: str, total: int) -> None:
+    def _write_part_meta(
+        self, url: str, etag: str, total: int, sha256: str = ""
+    ) -> None:
         try:
             self.part_meta_file.write_text(
-                json.dumps({"url": url, "etag": etag, "total": total}),
+                json.dumps(
+                    {"url": url, "etag": etag, "total": total, "sha256": sha256}
+                ),
                 encoding="utf-8",
             )
         except OSError:
             pass
-
-    def _install_linux(self) -> None:
-        archive = self.root.parent / "ffmpeg-linux.tar.xz"
-        try:
-            installer = LinuxToolInstaller(self.root)
-            installer.download(
-                ffmpeg_download_url(self.platform_profile.architecture),
-                archive,
-                self._update_download_progress,
-            )
-            installer.install_ffmpeg_archive(archive)
-        except Exception as exc:
-            self.error = str(exc)
-        finally:
-            archive.unlink(missing_ok=True)
-            self.installing = False
 
     def _update_download_progress(self, downloaded: int, total: int) -> None:
         self.downloaded_bytes = downloaded

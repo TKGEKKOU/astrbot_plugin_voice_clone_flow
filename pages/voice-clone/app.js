@@ -125,7 +125,8 @@ function renderResource(prefix, resource) {
   $(`${prefix}State`).dataset.state = installing ? "loading" : ready ? "ready" : "error";
   $(`${prefix}Path`).textContent = resource.resolved_path || resource.active_model || resource.resolved_model || "";
   const percent = Number.isFinite(resource.progress_percent) ? resource.progress_percent : (resource.total_bytes ? Math.round(resource.downloaded_bytes * 100 / resource.total_bytes) : 0);
-  $(`${prefix}Progress`).textContent = resource.error || (installing ? (probing ? "正在并行测速多个下载源，自动选择最快的一个…" : resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}`);
+  const verification = resource.verification === "verified" ? " · SHA-256 已校验" : resource.verification === "failed" ? " · SHA-256 校验失败" : resource.verification === "unverified" && ready ? " · 未取得 SHA-256" : "";
+  $(`${prefix}Progress`).textContent = resource.error || (installing ? (probing ? "正在并行测速多个下载源，自动选择最快的一个…" : resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}${verification}`);
   if (prefix === "ffmpeg") renderFfmpegManualHelp(resource);
   $(`${prefix}ProgressBar`).style.transform = `scaleX(${Math.max(0, Math.min(100, percent)) / 100})`;
   const track = $(`${prefix}ProgressTrack`);
