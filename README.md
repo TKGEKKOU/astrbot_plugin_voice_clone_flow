@@ -6,13 +6,13 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.2.3-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.5-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统支持)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-555)](LICENSE)
 
-[功能](#核心能力) · [架构](#架构总览) · [流程](#处理链路) · [安装](#快速开始) · [音色接入](#音色管理与-provider-接入) · [安全](#声音授权与安全)
+[功能](#核心能力) · [安装](#快速开始) · [配置](#系统与参考配置) · [流程](#处理链路) · [音色接入](#音色管理与-provider模型提供商-接入) · [架构](#技术架构) · [安全](#声音授权与安全)
 
 </div>
 
@@ -44,7 +44,147 @@ VoiceClone Flow 将音视频素材处理、语音标注、GPT-SoVITS 训练、�
 
 ---
 
-## 架构总览
+## 快速开始
+
+### 安装
+
+在 AstrBot 插件市场搜索 `VoiceClone Flow`，或手动安装：
+
+```bash
+cd AstrBot/data/plugins
+git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
+```
+
+安装后在 AstrBot 插件管理页重载插件。
+
+### 基础配置
+
+1. 在 AstrBot“模型提供商”页面启用一个 STT Provider。
+2. 在 VoiceClone Flow 插件配置中选择对应的 ASR Provider。
+3. 进入插件页面准备 FFmpeg、人声分离模型和 GPT-SoVITS 运行环境。
+4. 上传素材并完成片段审核与训练。
+5. 登记音色并更新 `voice_clone_flow_gsv` Provider。
+
+插件复用 AstrBot Provider，不重复保存 STT API Key。
+
+---
+
+## 系统与参考配置
+
+- AstrBot `>=4.24,<5`
+- Windows 10/11，或主流 x86_64/arm64 Linux 发行版
+- AstrBot 中已启用的语音转文字（STT/ASR）Provider
+- 建议使用支持 CUDA 的 NVIDIA GPU
+
+推荐使用 Windows。Linux 部分环境可能需要手动配置 NVIDIA 驱动、CUDA 或系统依赖。插件不会修改系统驱动、软件源或全局 Python 环境。
+
+FFmpeg、人声分离模型和 GPT-SoVITS 运行包均按需下载，不包含在插件仓库或插件市场安装包中。运行环境、模型和训练成果统一写入 AstrBot 插件数据目录。
+
+### 推理参考配置
+
+| 最低配置 | 推荐配置 |
+| --- | --- |
+| **处理器：** Intel Core i3-6100、AMD Ryzen 3 1200 或同等性能处理器 | **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 |
+| **内存：** 4GB RAM | **内存：** 8GB RAM |
+| **显卡：** NVIDIA GeForce GTX 1650 4GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 2060 6GB 或同等性能显卡 |
+| **存储空间：** Linux 需要 12GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+
+### 训练参考配置
+
+| 最低配置 | 推荐配置 |
+| --- | --- |
+| **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 | **处理器：** Intel Core i5-12400、AMD Ryzen 5 5600 或同等性能处理器 |
+| **内存：** 8GB RAM | **内存：** 16GB RAM |
+| **显卡：** NVIDIA GeForce GTX 1660 SUPER 6GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 4060 8GB 或同等性能显卡 |
+| **存储空间：** Linux 需要 15GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+
+最低配置以能够完成一次任务为基准，处理速度可能较慢。实际占用受模型、素材长度及并发量影响；硬件配置越高，处理速度通常越快。
+
+---
+
+## 处理链路
+
+```mermaid
+flowchart LR
+    Source["视频 / 音频素材"]
+    Extract["FFmpeg 提取"]
+    Separate["HT-Demucs 分离"]
+    Segment["VAD 切片"]
+    Transcribe["STT 标注"]
+    Review["试听与修订"]
+    Export["生成训练数据"]
+    TrainGPT["GPT 训练"]
+    TrainSoVITS["SoVITS 训练"]
+    Voice["音色成果"]
+    Provider["AstrBot TTS Provider"]
+
+    Source --> Extract
+    Extract --> Separate
+    Separate --> Segment
+    Segment --> Transcribe
+    Transcribe --> Review
+    Review --> Export
+    Export --> TrainGPT
+    Export --> TrainSoVITS
+    TrainGPT --> Voice
+    TrainSoVITS --> Voice
+    Voice --> Provider
+```
+
+处理链路采用可介入设计。用户可以在训练前试听每个片段、修改 STT 文本并排除不合格素材，避免错误标注直接进入模型训练。
+
+![素材处理与运行环境](./assets/material-processing.png)
+
+---
+
+## 音色管理与 Provider（模型提供商） 接入
+
+训练完成后，插件会将 GPT 和 SoVITS 权重整理为独立音色，并自动获取：
+
+- GPT 权重
+- SoVITS 权重
+- 参考音频
+- 参考音频文本
+- 音色语言
+- 训练状态与来源
+
+插件可以创建或更新以下 AstrBot Provider：
+
+```text
+Provider ID: voice_clone_flow_gsv
+Provider 类型: GSV TTS(Local)
+```
+
+用户仍可在更新 Provider 前修改参考音频、参考文本和语言，确保推理配置与实际音色一致。
+
+![音色管理与 Provider 接入](./assets/voice-management.png)
+
+外部 GPT-SoVITS 音色也可以放入：
+
+```text
+AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
+```
+
+返回插件页面刷新后，即可发现并登记外部音色。
+
+---
+
+## 多语言文字与语音消息
+
+VoiceClone Flow 支持将文字消息与语音内容分离处理。
+
+| 可见文字 | 语音内容 | 输出方式 |
+| --- | --- | --- |
+| 中文 | 中文 | 先发送中文文字，再补发中文语音 |
+| 中文 | 日语 | 先发送中文文字，翻译后补发日语语音 |
+
+长回复会按句切分为多条语音，并按照原文顺序依次发送。
+
+翻译或语音合成失败时，插件只保留中文文字消息，不会使用错误语言继续合成。
+
+---
+
+## 技术架构
 
 ```mermaid
 flowchart TB
@@ -144,165 +284,6 @@ flowchart TB
 
 ---
 
-## 处理链路
-
-```mermaid
-flowchart LR
-    Source["视频 / 音频素材"]
-    Extract["FFmpeg 提取"]
-    Separate["HT-Demucs 分离"]
-    Segment["VAD 切片"]
-    Transcribe["STT 标注"]
-    Review["试听与修订"]
-    Export["生成训练数据"]
-    TrainGPT["GPT 训练"]
-    TrainSoVITS["SoVITS 训练"]
-    Voice["音色成果"]
-    Provider["AstrBot TTS Provider"]
-
-    Source --> Extract
-    Extract --> Separate
-    Separate --> Segment
-    Segment --> Transcribe
-    Transcribe --> Review
-    Review --> Export
-    Export --> TrainGPT
-    Export --> TrainSoVITS
-    TrainGPT --> Voice
-    TrainSoVITS --> Voice
-    Voice --> Provider
-```
-
-处理链路采用可介入设计。用户可以在训练前试听每个片段、修改 STT 文本并排除不合格素材，避免错误标注直接进入模型训练。
-
-![素材处理与运行环境](./assets/material-processing.png)
-
----
-
-## 音色管理与 Provider（模型提供商） 接入
-
-训练完成后，插件会将 GPT 和 SoVITS 权重整理为独立音色，并自动获取：
-
-- GPT 权重
-- SoVITS 权重
-- 参考音频
-- 参考音频文本
-- 音色语言
-- 训练状态与来源
-
-插件可以创建或更新以下 AstrBot Provider：
-
-```text
-Provider ID: voice_clone_flow_gsv
-Provider 类型: GSV TTS(Local)
-```
-
-用户仍可在更新 Provider 前修改参考音频、参考文本和语言，确保推理配置与实际音色一致。
-
-![音色管理与 Provider 接入](./assets/voice-management.png)
-
-外部 GPT-SoVITS 音色也可以放入：
-
-```text
-AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
-```
-
-返回插件页面刷新后，即可发现并登记外部音色。
-
----
-
-## 多语言文字与语音消息
-
-VoiceClone Flow 支持将文字消息与语音内容分离处理。
-
-| 可见文字 | 语音内容 | 输出方式 |
-| --- | --- | --- |
-| 中文 | 中文 | 先发送中文文字，再补发中文语音 |
-| 中文 | 日语 | 先发送中文文字，翻译后补发日语语音 |
-
-长回复会按句切分为多条语音，并按照原文顺序依次发送。
-
-翻译或语音合成失败时，插件只保留中文文字消息，不会使用错误语言继续合成。
-
----
-
-## 系统支持
-
-- Windows：沿用 v2Pro 整合包安装流程。
-- Windows 的 FFmpeg 下载会按平台与架构自动展开下载模板，并行测速官方源与国内加速镜像，选择实测最快的源下载；支持断点续传，中断后重试不会从头开始。也可在插件配置中指定自定义模板 URL 或本地 FFmpeg 路径。
-- Linux 使用对应架构的静态 FFmpeg 构建（x86_64/arm64），与 Windows 使用独立归档和安装逻辑；下载完成后按配置或源提供的 `.sha256` 文件校验，无法取得可信摘要时明确显示未校验。
-- FFmpeg 下载模板支持 `{os}`、`{arch}`、`{exeSuffix}` 占位符；可通过 `ffmpeg_sha256` 为自建或滚动源配置固定 SHA-256。系统 Python 不可用时，插件会自动准备 uv 和 Python 3.11。
-- Linux 的 FFmpeg 可直接在插件页面下载到插件数据目录，无需执行 `sudo` 或修改系统 PATH。
-- 插件不会修改系统软件源、驱动或全局 Python 环境；安装按钮会在执行时重新检测系统和架构。
-- Linux 会通过 `nvidia-smi` 检测可用 NVIDIA GPU；检测失败时使用 CPU 安全配置并关闭半精度，页面会显示当前推理设备。
-- 页面显示当前阶段、百分比、正在处理的文件、依赖安装最新输出和错误详情；取消安装会终止受插件管理的安装子进程。
-- 运行环境、模型和训练成果写入 AstrBot 插件数据目录，不写入插件源码目录。
-
-### 一键安装边界
-
-“下载安装”包含源码或整合包下载、解压、Python 环境、依赖、预训练模型、插件补丁、冗余组件清理和完整性校验。失败缓存会保留用于重试，安装成功后会清理下载压缩包。
-
-为避免上游主分支变更导致同一插件版本的安装结果不一致，Linux 源码固定到插件版本已验证的 GPT-SoVITS 提交；升级 VoiceClone Flow 时才会更新该运行时基线。
-
-Linux 的 Python、uv、FFmpeg 和 GPT-SoVITS 文件均安装到 AstrBot 插件数据目录。插件不会自动安装 NVIDIA 驱动、CUDA 驱动或系统动态库；这些属于服务器基础环境。首次 Linux 验收时请关注页面错误详情和 `data/logs/gpt-sovits-api.log`。
-
-安装中断后可直接重试。插件会复用已完整下载的源码、已有虚拟环境和下载缓存；如果 uv 创建的虚拟环境缺少 pip，会自动补全后继续，不需要手动进入服务器目录修复。
-
-## 快速开始
-
-### 运行要求
-
-- AstrBot `>=4.24,<5`
-- Windows 10/11，或主流 x86_64/arm64 Linux 发行版
-- AstrBot 中已启用的语音转文字（STT/ASR）Provider
-- 足够的磁盘空间用于运行包、模型和训练成果
-- 建议使用 NVIDIA GPU 进行 GPT-SoVITS 训练和推理
-
-#### 推理系统需求
-
-| 最低配置 | 推荐配置 |
-| --- | --- |
-| **处理器：** Intel Core i3-6100、AMD Ryzen 3 1200 或同等性能处理器 | **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 |
-| **内存：** 4GB RAM | **内存：** 8GB RAM |
-| **显卡：** NVIDIA GeForce GTX 1650 4GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 2060 6GB 或同等性能显卡 |
-| **存储空间：** Linux 需要 12GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
-
-#### 训练系统需求
-
-| 最低配置 | 推荐配置 |
-| --- | --- |
-| **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 | **处理器：** Intel Core i5-12400、AMD Ryzen 5 5600 或同等性能处理器 |
-| **内存：** 8GB RAM | **内存：** 16GB RAM |
-| **显卡：** NVIDIA GeForce GTX 1660 SUPER 6GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 4060 8GB 或同等性能显卡 |
-| **存储空间：** Linux 需要 15GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
-
-推荐使用 Windows。Linux 部分环境可能需要手动配置 NVIDIA 驱动、CUDA 或系统依赖。最低配置以能够完成一次任务为基准，处理速度可能较慢；硬件配置越高，处理速度通常越快。
-
-FFmpeg、人声分离模型和 GPT-SoVITS 运行包均按需下载，不包含在插件仓库或插件市场安装包中。
-
-### 安装
-
-在 AstrBot 插件市场搜索 `VoiceClone Flow`，或手动安装：
-
-```bash
-cd AstrBot/data/plugins
-git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
-```
-
-安装后在 AstrBot 插件管理页重载插件。
-
-### 基础配置
-
-1. 在 AstrBot“模型提供商”页面启用一个 STT Provider。
-2. 在 VoiceClone Flow 插件配置中选择对应的 ASR Provider。
-3. 进入插件页面准备 FFmpeg、人声分离模型和 GPT-SoVITS 运行环境。
-4. 上传素材并完成片段审核与训练。
-5. 登记音色并更新 `voice_clone_flow_gsv` Provider。
-
-插件复用 AstrBot Provider，不重复保存 STT API Key。
-
----
-
 ## 数据目录
 
 插件运行数据统一保存在：
@@ -319,7 +300,7 @@ AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/
 | `tasks/` | 素材处理任务与中间文件 | 按插件配置 |
 | `datasets/` | GPT-SoVITS 训练数据 | 按任务状态 |
 | `voices/` | 训练成果与外部音色 | 否 |
-| `logs/` | 服务与训练日志 | 按运行产生 |
+| `data/logs/` | GPT-SoVITS API 服务日志 | 按运行产生 |
 
 临时任务数据会定期清理，训练完成的音色不会被自动删除。
 
@@ -328,6 +309,34 @@ AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/
 ```text
 AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
 ```
+
+---
+
+## 常见问题
+
+### Linux 安装时提示缺少系统依赖
+
+插件会管理自己的 Python、FFmpeg 和 GPT-SoVITS 文件，但不会自动安装 NVIDIA 驱动、CUDA 或系统动态库。请按照页面错误详情完成服务器基础环境配置后重试。
+
+### GPT-SoVITS 启动时提示缺少预训练模型
+
+这表示 GPT-SoVITS 运行环境尚未完整安装，不是音色权重缺失。请在插件页面重新执行“下载安装”；安装器会复用有效缓存并重新校验 v2Pro 必需模型。Linux 可同时检查：
+
+```text
+data/logs/gpt-sovits-api.log
+```
+
+### 服务启动后进程退出或长时间无响应
+
+先检查可用内存、显存和系统 OOM 日志。无可用 NVIDIA GPU 时，Linux 会回退到 CPU 全精度推理，启动与合成速度会明显降低。
+
+### FFmpeg 或运行环境下载失败
+
+直接重试即可继续使用有效缓存。Windows 还可以在插件配置中指定自定义下载地址或本地 FFmpeg 路径。
+
+### 如何导入已有音色
+
+将包含 `gpt.ckpt`、`sovits.pth`、参考音频和标注信息的音色目录放入 `voices/`，返回插件页面刷新后即可发现并登记。
 
 ---
 
