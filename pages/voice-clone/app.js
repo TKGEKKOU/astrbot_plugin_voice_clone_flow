@@ -16,9 +16,30 @@ function errorText(error) {
 function applyRemoteMode() {
   const mode = $("remoteMode").value;
   for (const item of document.querySelectorAll("[data-local-only]")) item.hidden = mode === "remote";
+  for (const item of document.querySelectorAll("[data-remote-only]")) item.hidden = mode !== "remote";
   $("remoteBaseUrl").disabled = mode !== "remote";
   $("remoteToken").disabled = mode !== "remote";
   $("remoteTimeout").disabled = mode !== "remote";
+}
+function renderRemoteProviders(providers) {
+  const box = $("remoteProviders"); box.replaceChildren();
+  if (!providers?.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const title = document.createElement("strong"); title.textContent = "远程 Provider"; box.append(title);
+  for (const provider of providers) {
+    const row = document.createElement("div"); row.className = "remote-provider-row";
+    row.textContent = `${provider.name} · ${provider.id} · voice_id=${provider.voice_id} · ${provider.enabled ? "已启用" : "已禁用"}`;
+    box.append(row);
+  }
+}
+async function loadFrpStatus() {
+  try { const data = await bridge.apiGet("remote/frp/status"); const frp = data.frp || {}; $("frpStatus").textContent = frp.service_active ? `已运行（控制端口 ${frp.bind_port}，映射端口 ${frp.remote_port}）` : `未运行（控制端口 ${frp.bind_port}）`; }
+  catch (error) { $("frpStatus").textContent = `检查失败：${errorText(error)}`; }
+}
+async function frpAction(route) {
+  const payload = { token: $("frpToken").value.trim(), remote_port: Number($("frpPort").value) };
+  try { await bridge.apiPost(route, payload); $("remoteMessage").textContent = "FRP 操作成功"; await loadFrpStatus(); }
+  catch (error) { $("remoteMessage").textContent = `FRP 操作失败：${errorText(error)}`; }
 }
 function renderRemoteVoices(voices) {
   const box = $("remoteVoices"); box.replaceChildren();
@@ -37,7 +58,7 @@ async function loadRemoteStatus() {
   $("remoteToken").value = config.token || "";
   $("remoteTimeout").value = config.timeout_seconds || 300;
   $("remoteStatus").textContent = data.last_error ? `异常：${data.last_error}` : data.configured ? "已配置" : "未配置";
-  renderRemoteVoices(data.voices || []); applyRemoteMode();
+  renderRemoteVoices(data.voices || []); renderRemoteProviders(data.providers || []); applyRemoteMode(); loadFrpStatus();
 }
 async function remoteAction(route) {
   const payload = { mode: $("remoteMode").value, base_url: $("remoteBaseUrl").value.trim(), token: $("remoteToken").value, timeout_seconds: Number($("remoteTimeout").value) };
@@ -226,6 +247,8 @@ $("toggleRuntime").onclick = () => {
 $("remoteMode").onchange = applyRemoteMode;
 $("remoteTest").onclick = () => remoteAction("remote/test");
 $("remoteSync").onclick = () => remoteAction("remote/sync");
+$("frpPrepare").onclick = () => frpAction("remote/frp/prepare");
+$("frpRestart").onclick = () => frpAction("remote/frp/restart");
 $("refreshRuntime").onclick = loadRuntimeStatus;
 $("installFfmpeg").onclick = () => runtimeAction("runtime/ffmpeg/install");
 $("deleteFfmpeg").onclick = () => runtimeAction("runtime/ffmpeg/delete");

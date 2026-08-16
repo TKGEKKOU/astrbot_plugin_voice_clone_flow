@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.3.0-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
@@ -74,6 +74,8 @@ git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
 远程模式只负责推理和音色同步，训练仍在 Studio 所在电脑完成；插件不会在服务器启动或安装 GPT-SoVITS，也不会检查 Windows 权重路径。一个远程音色对应一个独立 Provider。FRP 或其他网络通道需要用户自行建立，`127.0.0.1` 表示发起请求的服务器本机，只有映射到服务器本机端口时才可使用。
 
 远程 Studio 接口约定见 [`docs/remote-studio-api.md`](docs/remote-studio-api.md)。
+
+远程模式页面同时提供服务器 FRP 准备检查。该功能新建独立的 `frps-voiceclone.service`，控制端口为 `7001`，默认映射端口为 `19090`；不会修改或删除已有的 `/etc/frp/frps.toml`、`frps.service` 或 `7000` 端口。首次准备时会按服务器架构下载 FRP，并写入独立配置 `/etc/frp/frps-voiceclone.toml`。AstrBot 进程需要拥有写入 `/etc/frp`、`/etc/systemd/system` 和执行 `systemctl` 的权限。
 
 ---
 

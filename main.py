@@ -35,6 +35,7 @@ if __package__:
     from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from .voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
+    from .voice_clone_flow.frp_manager import FrpManager, FrpManagerError
 else:
     from voice_clone_flow import PLUGIN_NAME
     from voice_clone_flow.astrbot_api import ASRTestError, list_stt_providers, run_stt_test
@@ -60,6 +61,7 @@ else:
     from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
+    from voice_clone_flow.frp_manager import FrpManager, FrpManagerError
 
 
 class VoiceCloneFlowPlugin(Star):
@@ -75,6 +77,7 @@ class VoiceCloneFlowPlugin(Star):
         self.remote_last_error = ""
         self.remote_last_check = None
         self.remote_last_sync = None
+        self.frp_manager = FrpManager(self.data_dir)
         self.stt_provider_id = str(config.get("stt_provider_id", "")).strip()
         self.separator_model_path = str(config.get("separator_model_path", "")).strip()
         self.separator_model_url = str(config.get("separator_model_url", "")).strip()
@@ -166,6 +169,9 @@ class VoiceCloneFlowPlugin(Star):
         context.register_web_api(f"/{PLUGIN_NAME}/remote/status", self.page_remote_status, ["GET"], "Get remote Studio status")
         context.register_web_api(f"/{PLUGIN_NAME}/remote/test", self.page_remote_test, ["POST"], "Test remote Studio connection")
         context.register_web_api(f"/{PLUGIN_NAME}/remote/sync", self.page_remote_sync, ["POST"], "Sync remote Studio voices")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/frp/status", self.page_remote_frp_status, ["GET"], "Get VoiceClone FRP status")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/frp/prepare", self.page_remote_frp_prepare, ["POST"], "Prepare VoiceClone FRP server")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/frp/restart", self.page_remote_frp_restart, ["POST"], "Restart VoiceClone FRP server")
         context.register_web_api(
             f"/{PLUGIN_NAME}/tasks/create/<provider_id>/<language>/<authorization>",
             self.page_create_task,
@@ -399,6 +405,11 @@ class VoiceCloneFlowPlugin(Star):
         }
 
     def _remote_status_payload(self) -> dict:
+        providers = []
+        manager = getattr(self.context, "provider_manager", None)
+        for item in getattr(manager, "providers_config", []) if manager else []:
+            if isinstance(item, dict) and str(item.get("id", "")).startswith("voice_clone_flow_remote_"):
+                providers.append({"id": item.get("id"), "name": item.get("display_name", item.get("id")), "enabled": bool(item.get("enable", True)), "voice_id": item.get("voice_id", "")})
         return {
             "mode": self.remote_config.mode,
             "configured": bool(self.remote_config.base_url and self.remote_config.token),
@@ -407,6 +418,7 @@ class VoiceCloneFlowPlugin(Star):
             "last_check": self.remote_last_check,
             "last_sync": self.remote_last_sync,
             "voices": [item.__dict__ for item in self.voice_registry.list() if item.source == "remote"],
+            "providers": providers,
         }
 
     def _save_remote_payload(self, payload: dict) -> None:
@@ -426,6 +438,27 @@ class VoiceCloneFlowPlugin(Star):
 
     async def page_remote_status(self):
         return json_response(self._remote_status_payload())
+
+    async def page_remote_frp_status(self):
+        try:
+            return json_response({"frp": self.frp_manager.status()})
+        except FrpManagerError as exc:
+            return error_response(str(exc), status_code=500)
+
+    async def page_remote_frp_prepare(self):
+        payload = await request.json(default={})
+        payload = payload if isinstance(payload, dict) else {}
+        try:
+            result = await asyncio.to_thread(self.frp_manager.prepare, str(payload.get("token", "")), int(payload.get("remote_port", 19090)))
+            return json_response({"frp": result})
+        except (FrpManagerError, ValueError) as exc:
+            return error_response(str(exc), status_code=400)
+
+    async def page_remote_frp_restart(self):
+        try:
+            return json_response({"frp": await asyncio.to_thread(self.frp_manager.restart)})
+        except FrpManagerError as exc:
+            return error_response(str(exc), status_code=400)
 
     async def page_remote_test(self):
         payload = await request.json(default={})
