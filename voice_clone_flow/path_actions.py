@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import subprocess
 
+from .platform_runtime import PlatformProfile, detect_platform_profile
+
 
 def validate_voice_directory(data_dir: Path, voice_id: str) -> Path:
     root = (Path(data_dir) / "voices").resolve()
@@ -15,12 +17,19 @@ def validate_voice_directory(data_dir: Path, voice_id: str) -> Path:
     return target
 
 
-def open_voice_directory(data_dir: Path, voice_id: str) -> Path:
-    target = validate_voice_directory(data_dir, voice_id)
-    if hasattr(os, "startfile"):
+def _open_directory(target: Path, profile: PlatformProfile) -> None:
+    if not profile.can_open_directory:
+        return
+    if profile.system == "windows" and hasattr(os, "startfile"):
         os.startfile(str(target))
-    else:
-        subprocess.Popen(["explorer", str(target)])
+    elif profile.system == "linux":
+        subprocess.Popen(["xdg-open", str(target)])
+
+
+def open_voice_directory(data_dir: Path, voice_id: str,
+                         platform_profile: PlatformProfile | None = None) -> Path:
+    target = validate_voice_directory(data_dir, voice_id)
+    _open_directory(target, platform_profile or detect_platform_profile())
     return target
 
 
@@ -30,10 +39,7 @@ def ensure_voices_root(data_dir: Path) -> Path:
     return root
 
 
-def open_voices_root(data_dir: Path) -> Path:
+def open_voices_root(data_dir: Path, platform_profile: PlatformProfile | None = None) -> Path:
     target = ensure_voices_root(data_dir)
-    if hasattr(os, "startfile"):
-        os.startfile(str(target))
-    else:
-        subprocess.Popen(["explorer", str(target)])
+    _open_directory(target, platform_profile or detect_platform_profile())
     return target

@@ -19,7 +19,7 @@ def resolve_ffmpeg(
         return explicit.resolve()
     located = which("ffmpeg")
     if not located:
-        raise PipelineConfigurationError("未找到 FFmpeg，请在插件配置中填写 ffmpeg.exe 路径")
+        raise PipelineConfigurationError("未找到 FFmpeg，请配置可执行文件路径或按页面提示安装系统 FFmpeg")
     return Path(located).resolve()
 
 

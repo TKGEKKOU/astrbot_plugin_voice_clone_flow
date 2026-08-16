@@ -7,55 +7,52 @@ let runtimeTimer = null;
 let currentVoice = "";
 let trainingTimer = null;
 const presetValues = { light: [5, 10], quick: [10, 20], standard: [15, 30], enhanced: [20, 50], fine: [30, 100] };
+const phaseNames = { preparing: "准备", download: "下载源码", extracting: "解压", python: "准备 Python", dependencies: "安装依赖", models: "下载模型", patching: "应用补丁", cleaning: "清理", verifying: "校验", complete: "完成", error: "失败", cancelling: "正在取消" };
 
 function errorText(error) {
   return error?.message || String(error);
 }
 
-let remoteMode = "local";
+function applyRemoteMode() {
+  const mode = $("remoteMode").value;
+  for (const item of document.querySelectorAll("[data-local-only]")) item.hidden = mode === "remote";
+  $("remoteBaseUrl").disabled = mode !== "remote";
+  $("remoteToken").disabled = mode !== "remote";
+  $("remoteTimeout").disabled = mode !== "remote";
+}
 function renderRemoteVoices(voices) {
-  const box = $("remoteVoices");
-  box.replaceChildren();
+  const box = $("remoteVoices"); box.replaceChildren();
   if (!voices?.length) { box.hidden = true; return; }
   box.hidden = false;
-  const table = document.createElement("div");
-  table.className = "remote-voice-list";
   for (const voice of voices) {
-    const row = document.createElement("div");
-    row.className = "remote-voice-row";
+    const row = document.createElement("div"); row.className = "remote-voice-row";
     row.textContent = `${voice.name || voice.remote_voice_id} · ${voice.reference_language || "zh"} · ${voice.status || "ready"} · ${voice.reference_text || "无参考文本"}`;
-    table.append(row);
+    box.append(row);
   }
-  box.append(table);
-}
-function applyRemoteMode() {
-  remoteMode = $("remoteMode").value;
-  for (const item of document.querySelectorAll("[data-local-only]")) item.hidden = remoteMode === "remote";
-  $("remoteBaseUrl").disabled = remoteMode !== "remote";
-  $("remoteToken").disabled = remoteMode !== "remote";
-  $("remoteTimeout").disabled = remoteMode !== "remote";
 }
 async function loadRemoteStatus() {
-  const data = await bridge.apiGet("remote/status");
-  const config = data.config || {};
+  const data = await bridge.apiGet("remote/status"); const config = data.config || {};
   $("remoteMode").value = data.mode || "local";
   $("remoteBaseUrl").value = config.base_url || "";
   $("remoteToken").value = config.token || "";
   $("remoteTimeout").value = config.timeout_seconds || 300;
   $("remoteStatus").textContent = data.last_error ? `异常：${data.last_error}` : data.configured ? "已配置" : "未配置";
-  renderRemoteVoices(data.voices || []);
-  applyRemoteMode();
+  renderRemoteVoices(data.voices || []); applyRemoteMode();
 }
 async function remoteAction(route) {
   const payload = { mode: $("remoteMode").value, base_url: $("remoteBaseUrl").value.trim(), token: $("remoteToken").value, timeout_seconds: Number($("remoteTimeout").value) };
-  $("remoteMessage").textContent = "处理中...";
-  $("remoteTest").disabled = true; $("remoteSync").disabled = true;
-  try {
-    const data = await bridge.apiPost(route, payload);
-    $("remoteMessage").textContent = route.endsWith("sync") ? `已同步 ${data.count || 0} 个音色` : "连接成功";
-    await loadRemoteStatus();
-  } catch (error) { $("remoteMessage").textContent = errorText(error); }
+  $("remoteMessage").textContent = "处理中..."; $("remoteTest").disabled = true; $("remoteSync").disabled = true;
+  try { const data = await bridge.apiPost(route, payload); $("remoteMessage").textContent = route.endsWith("sync") ? `已同步 ${data.count || 0} 个音色` : "连接成功"; await loadRemoteStatus(); }
+  catch (error) { $("remoteMessage").textContent = errorText(error); }
   finally { $("remoteTest").disabled = false; $("remoteSync").disabled = false; }
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "--";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(index > 2 ? 1 : 0)} ${units[index]}`;
 }
 
 function update() {
@@ -132,14 +129,39 @@ async function loadVoices(preferred = "") {
   await selectVoice(select.value);
 }
 
+function renderFfmpegManualHelp(resource) {
+  const help = $("ffmpegManualHelp");
+  if (!help) return;
+  help.replaceChildren();
+  if (!resource.error) { help.hidden = true; return; }
+  help.hidden = false;
+  const title = document.createElement("strong");
+  title.textContent = "自动下载失败，可手动下载 FFmpeg";
+  const text = document.createElement("p");
+  text.textContent = `下载 ZIP 后解压，将 ffmpeg.exe 和 ffprobe.exe 放入：${resource.managed_path}`;
+  help.append(title, text);
+  for (const item of resource.manual_download_urls || []) {
+    const link = document.createElement("a");
+    link.href = item.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = item.name;
+    help.append(document.createTextNode(" "), link);
+  }
+}
+
 function renderResource(prefix, resource) {
   const ready = Boolean(resource.ready || resource.usable);
   const installing = Boolean(resource.installing);
-  $(`${prefix}State`).textContent = `${prefix === "ffmpeg" ? "FFmpeg" : "人声分离模型"} ${installing ? `下载中 ${resource.progress_percent || 0}%` : ready ? "已就绪" : "未安装"}`;
+  const probing = Boolean(resource.probing);
+  const label = prefix === "ffmpeg" ? "FFmpeg" : "人声分离模型";
+  $(`${prefix}State`).textContent = `${label} ${installing ? (probing ? "正在测速选择最快下载源" : `下载中 ${resource.progress_percent || 0}%`) : ready ? "已就绪" : "未安装"}`;
   $(`${prefix}State`).dataset.state = installing ? "loading" : ready ? "ready" : "error";
   $(`${prefix}Path`).textContent = resource.resolved_path || resource.active_model || resource.resolved_model || "";
   const percent = Number.isFinite(resource.progress_percent) ? resource.progress_percent : (resource.total_bytes ? Math.round(resource.downloaded_bytes * 100 / resource.total_bytes) : 0);
-  $(`${prefix}Progress`).textContent = resource.error || (installing ? (resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}`);
+  const verification = resource.verification === "verified" ? " · SHA-256 已校验" : resource.verification === "failed" ? " · SHA-256 校验失败" : resource.verification === "unverified" && ready ? " · 未取得 SHA-256" : "";
+  $(`${prefix}Progress`).textContent = resource.error || (installing ? (probing ? "正在并行测速多个下载源，自动选择最快的一个…" : resource.total_bytes ? `${percent}%` : "正在计算进度") : `来源：${resource.source || "unknown"}${verification}`);
+  if (prefix === "ffmpeg") renderFfmpegManualHelp(resource);
   $(`${prefix}ProgressBar`).style.transform = `scaleX(${Math.max(0, Math.min(100, percent)) / 100})`;
   const track = $(`${prefix}ProgressTrack`);
   if (track) track.hidden = !installing;
@@ -160,12 +182,18 @@ async function loadRuntimeStatus() {
     $("ttsState").textContent = `GPT-SoVITS TTS ${ttsText}`;
     $("ttsState").dataset.state = service.service_running ? "ready" : service.start_error ? "error" : service.starting || runtime.installing ? "loading" : "idle";
     $("gptPath").textContent = runtime.install_dir || service.install_dir || "";
-    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? "正在加载模型，首次启动可能需要几分钟" : runtime.installing ? `${runtime.progress_percent ?? 0}%` : "");
+    const strategy = runtime.install_strategy === "linux_source" ? "源码安装" : "v2Pro 整合包";
+    $("gptMeta").textContent = `${runtime.platform || data.platform?.system || "unknown"} ${runtime.architecture || data.platform?.architecture || ""} · ${strategy} · ${String(runtime.runtime_device || "").toUpperCase()} · 可用空间 ${formatBytes(runtime.disk_free_bytes)}`;
+    const phase = phaseNames[runtime.phase] || runtime.phase || "";
+    const percentText = Number.isFinite(runtime.progress_percent) ? `总进度 ${runtime.progress_percent}%` : "";
+    const phasePercent = Number.isFinite(runtime.phase_progress_percent) ? `当前项 ${runtime.phase_progress_percent}%` : "";
+    const serviceDetail = service.service_running ? `PID ${service.process_id || "外部进程"} · 日志 ${service.log_path || ""}` : "";
+    $("gptProgress").textContent = runtime.error || service.start_error || (service.starting ? `正在加载模型 · 日志 ${service.log_path || ""}` : runtime.installing ? [phase, percentText, phasePercent, runtime.detail || runtime.last_output].filter(Boolean).join(" · ") : serviceDetail);
     $("gptProgressTrack").hidden = !runtime.installing;
     const gptPercent = runtime.installing && Number.isFinite(runtime.progress_percent) ? runtime.progress_percent : 0;
     $("gptProgressBar").style.transform = `scaleX(${Math.max(0, Math.min(100, gptPercent)) / 100})`;
     $("installGpt").hidden = runtime.installing; $("cancelGpt").hidden = !runtime.installing;
-    $("installGpt").disabled = runtime.installed; $("startGpt").hidden = Boolean(service.service_running || service.starting); $("stopGpt").hidden = !service.service_running && !service.starting; $("startGpt").disabled = runtime.installing || !runtime.installed; $("deleteGpt").disabled = runtime.installing || service.starting || !runtime.installed;
+    $("installGpt").disabled = runtime.installed; $("startGpt").hidden = Boolean(service.service_running || service.starting); $("stopGpt").hidden = !service.service_running && !service.starting; $("startGpt").disabled = runtime.installing || !runtime.installed; $("deleteGpt").disabled = runtime.installing || service.starting || !runtime.present;
     renderResource("ffmpeg", data.ffmpeg || {});
     renderResource("separator", data.separator || {});
     $("runtimeError").textContent = "";

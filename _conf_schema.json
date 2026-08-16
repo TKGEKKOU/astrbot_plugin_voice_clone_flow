@@ -6,21 +6,32 @@
     "default": "",
     "_special": "select_provider_stt"
   },
-  "remote_mode": {
-    "type": "string",
-    "description": "运行模式",
-    "hint": "远程模式将推理请求转发到另一台电脑上的 VoiceClone Studio。",
-    "default": "local",
-    "options": ["local", "remote"]
-  },
+  "remote_mode": {"type": "string", "description": "运行模式", "hint": "远程模式将推理请求转发到另一台电脑上的 VoiceClone Studio。", "default": "local", "options": ["local", "remote"]},
   "remote_studio": {
-    "type": "object",
-    "description": "远程 VoiceClone Studio",
+    "type": "object", "description": "远程 VoiceClone Studio",
     "items": {
       "base_url": {"type": "string", "description": "Studio 地址", "default": ""},
       "token": {"type": "string", "description": "Studio Token", "default": ""},
       "timeout_seconds": {"type": "int", "description": "远程请求超时（秒）", "default": 300}
     }
+  },
+  "ffmpeg_path": {
+    "type": "string",
+    "description": "FFmpeg \u53ef\u6267\u884c\u6587\u4ef6\u8def\u5f84\uff08\u53ef\u9009\uff09",
+    "hint": "\u7559\u7a7a\u65f6\u81ea\u52a8\u67e5\u627e\u7cfb\u7edf FFmpeg\uff0c\u627e\u4e0d\u5230\u65f6\u53ef\u4ee5\u5728\u63d2\u4ef6\u9875\u9762\u4e0b\u8f7d\u3002\u4e5f\u53ef\u586b\u5199\u672c\u5730 ffmpeg.exe \u5b8c\u6574\u8def\u5f84\u3002",
+    "default": ""
+  },
+  "ffmpeg_download_url": {
+    "type": "string",
+    "description": "FFmpeg \u4e0b\u8f7d\u5730\u5740\uff08\u53ef\u9009\uff09",
+    "hint": "\u652f\u6301 {os}/{arch}/{exeSuffix} \u5360\u4f4d\u7b26\uff1b\u4f8b\u5982 https://example.com/ffmpeg-{os}-{arch}{exeSuffix}.zip\uff0c\u7559\u7a7a\u65f6\u81ea\u52a8\u6d4b\u901f\u9ed8\u8ba4\u6e90\u3002",
+    "default": ""
+  },
+  "ffmpeg_sha256": {
+    "type": "string",
+    "description": "FFmpeg \u4e0b\u8f7d\u5305 SHA-256 \uff08\u53ef\u9009\uff09",
+    "hint": "\u586b\u5199 64 \u4f4d SHA-256 \u540e\u5c06\u5f3a\u5236\u6821\u9a8c\uff1b\u7559\u7a7a\u65f6\u5c1d\u8bd5\u8bfb\u53d6\u4e0b\u8f7d\u5730\u5740\u540e\u7f00 .sha256 \u7684\u6821\u9a8c\u6587\u4ef6\u3002",
+    "default": ""
   },
   "gpt_sovits": {
     "type": "object",

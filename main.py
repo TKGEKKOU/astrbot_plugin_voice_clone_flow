@@ -31,6 +31,7 @@ if __package__:
     from .voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from .voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from .voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from .voice_clone_flow.platform_runtime import detect_platform_profile
     from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from .voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
@@ -55,6 +56,7 @@ else:
     from voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from voice_clone_flow.platform_runtime import detect_platform_profile
     from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
@@ -70,12 +72,6 @@ class VoiceCloneFlowPlugin(Star):
             self.remote_config = self.remote_config_store.load()
         except RemoteStudioConfigError:
             self.remote_config = RemoteStudioConfig()
-        configured_remote = config.get("remote_studio", {}) if isinstance(config.get("remote_studio", {}), dict) else {}
-        if not self.remote_config_store.path.is_file() and (configured_remote or config.get("remote_mode")):
-            self.remote_config.mode = str(config.get("remote_mode") or self.remote_config.mode)
-            self.remote_config.base_url = str(configured_remote.get("base_url", self.remote_config.base_url) or "")
-            self.remote_config.token = str(configured_remote.get("token", self.remote_config.token) or "")
-            self.remote_config.timeout_seconds = float(configured_remote.get("timeout_seconds", self.remote_config.timeout_seconds))
         self.remote_last_error = ""
         self.remote_last_check = None
         self.remote_last_sync = None
@@ -125,8 +121,7 @@ class VoiceCloneFlowPlugin(Star):
             self.data_dir,
             str(config.get("ffmpeg_path", "")).strip(),
             str(config.get("ffmpeg_download_url", "")).strip() or None,
-        ) if str(config.get("ffmpeg_download_url", "")).strip() else FFmpegResourceManager(
-            self.data_dir, str(config.get("ffmpeg_path", "")).strip()
+            configured_sha256=str(config.get("ffmpeg_sha256", "")).strip(),
         )
         context.register_web_api(
             f"/{PLUGIN_NAME}/debug", self.debug_page, ["GET"], "VoiceClone Flow development console"
@@ -229,8 +224,6 @@ class VoiceCloneFlowPlugin(Star):
         )
 
     async def page_separator_install(self):
-        if self.remote_config.mode == "remote":
-            return error_response("远程模式下不能管理本地人声分离模型", status_code=409)
         started = self.separator_resources.start_install(self.separator_model_path)
         return json_response({**self.separator_resources.status(), "started": started})
 
@@ -240,17 +233,19 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"removed": self.separator_resources.delete_managed()})
 
     async def page_runtime_status(self):
+        platform_profile = detect_platform_profile()
         custom = inspect_separator_model(self.separator_model_path)
         separator = self.separator_resources.status()
         separator["usable"] = custom.usable or bool(separator["ready"])
         separator["active_model"] = custom.configured_path if custom.usable else separator["resolved_model"]
         separator["source"] = "configured" if custom.usable else "managed" if separator["ready"] else "missing"
-        return json_response({"ffmpeg": self.ffmpeg_resources.status(), "separator": separator})
+        return json_response({"platform": platform_profile.to_dict(), "ffmpeg": self.ffmpeg_resources.status(), "separator": separator})
 
     async def page_ffmpeg_install(self):
-        if self.remote_config.mode == "remote":
-            return error_response("远程模式下不能管理本地 FFmpeg", status_code=409)
-        return json_response({**self.ffmpeg_resources.status(), "started": self.ffmpeg_resources.start_install()})
+        try:
+            return json_response({**self.ffmpeg_resources.status(), "started": self.ffmpeg_resources.start_install()})
+        except RuntimeError as exc:
+            return error_response(str(exc), status_code=409)
 
     async def page_ffmpeg_delete(self):
         if self.ffmpeg_resources.installing:
@@ -270,17 +265,13 @@ class VoiceCloneFlowPlugin(Star):
         try:
             started = self.gpt_install.start_install(url or self.gpt_config.values().get("download_url"))
             return json_response({**self.gpt_install.status(), "started": started}, status_code=202)
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             return error_response(str(exc), status_code=400)
 
     async def page_gpt_install_cancel(self):
-        if self.remote_config.mode == "remote":
-            return json_response({"cancelled": False, "mode": "remote"})
         return json_response({"cancelled": self.gpt_install.cancel_install(), **self.gpt_install.status()})
 
     async def page_gpt_delete(self):
-        if self.remote_config.mode == "remote":
-            return error_response("远程模式下不能删除本地 GPT-SoVITS", status_code=409)
         try:
             self.gpt_adapter.stop_service()
             return json_response(self.gpt_install.remove_install())
@@ -290,6 +281,13 @@ class VoiceCloneFlowPlugin(Star):
     async def page_gpt_start(self):
         if self.remote_config.mode == "remote":
             return error_response("远程模式下不能启动本地 GPT-SoVITS", status_code=409)
+        runtime = self.gpt_install.status()
+        if not runtime["installed"]:
+            detail = "、".join(runtime.get("missing_models") or [])
+            message = "GPT-SoVITS 运行环境不完整，请先点击下载安装"
+            if detail:
+                message += f"。缺少：{detail}"
+            return error_response(message, status_code=409)
         if self.gpt_starting:
             return json_response({"starting": True, "started": False})
         if self.gpt_adapter.is_alive():
@@ -311,8 +309,6 @@ class VoiceCloneFlowPlugin(Star):
             self.gpt_starting = False
 
     async def page_gpt_stop(self):
-        if self.remote_config.mode == "remote":
-            return json_response({"mode": "remote", "stopped": False})
         self.gpt_starting = False
         await asyncio.to_thread(self.gpt_adapter.stop_service)
         return json_response(self.gpt_adapter.status())
@@ -559,8 +555,6 @@ class VoiceCloneFlowPlugin(Star):
 
 
     async def page_task_dataset(self, task_id: str):
-        if self.remote_config.mode == "remote":
-            return error_response("远程模式下不提供本地训练数据集", status_code=409)
         try:
             payload = await request.json(default={})
             rows = payload.get("segments", []) if isinstance(payload, dict) else []
@@ -581,8 +575,6 @@ class VoiceCloneFlowPlugin(Star):
             return error_response(str(exc), status_code=400)
 
     async def page_task_train(self, task_id: str):
-        if self.remote_config.mode == "remote":
-            return error_response("远程模式下不提供本地训练", status_code=409)
         payload = await request.json(default={})
         name = str(payload.get("name", "")).strip() if isinstance(payload, dict) else ""
         language = str(payload.get("language", "zh")).strip() if isinstance(payload, dict) else "zh"
