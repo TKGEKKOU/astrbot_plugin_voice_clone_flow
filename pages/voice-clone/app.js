@@ -25,10 +25,10 @@ function renderRemoteProviders(providers) {
   const box = $("remoteProviders"); box.replaceChildren();
   if (!providers?.length) { box.hidden = true; return; }
   box.hidden = false;
-  const title = document.createElement("strong"); title.textContent = "远程 Provider"; box.append(title);
+  const title = document.createElement("strong"); title.textContent = "远程 Provider（模型提供商）"; box.append(title);
   for (const provider of providers) {
     const row = document.createElement("div"); row.className = "remote-provider-row";
-    row.textContent = `${provider.name} · ${provider.id} · voice_id=${provider.voice_id} · ${provider.enabled ? "已启用" : "已禁用"}`;
+    row.textContent = `${provider.name} · GSVI TTS(API) · ${provider.id} · 音色 ${provider.voice_id} · ${provider.api_base || "未配置地址"} · ${provider.enabled ? "已启用" : "已禁用"}`;
     box.append(row);
   }
 }

@@ -34,7 +34,7 @@ if __package__:
     from .voice_clone_flow.platform_runtime import detect_platform_profile
     from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from .voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
-    from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
+    from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config, finalize_remote_provider_delivery, normalize_delivery_provider
     from .voice_clone_flow.frp_manager import FrpManager, FrpManagerError
 else:
     from voice_clone_flow import PLUGIN_NAME
@@ -60,7 +60,7 @@ else:
     from voice_clone_flow.platform_runtime import detect_platform_profile
     from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
     from voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
-    from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
+    from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config, finalize_remote_provider_delivery, normalize_delivery_provider
     from voice_clone_flow.frp_manager import FrpManager, FrpManagerError
 
 
@@ -83,6 +83,7 @@ class VoiceCloneFlowPlugin(Star):
         self.separator_model_url = str(config.get("separator_model_url", "")).strip()
         self.studio: VoiceCloneStudio
         self.background_tasks: set[asyncio.Task] = set()
+        self.remote_delivery_task: asyncio.Task | None = None
         self.gpt_starting = False
         self.gpt_start_error = ""
         cleanup_settings = config.get("automatic_cleanup", {}) if isinstance(config.get("automatic_cleanup", {}), dict) else {}
@@ -194,6 +195,7 @@ class VoiceCloneFlowPlugin(Star):
             task = asyncio.create_task(self._automatic_cleanup_loop())
             self.background_tasks.add(task)
             task.add_done_callback(self.background_tasks.discard)
+        self._ensure_remote_delivery_worker()
         logger.info("VoiceClone Flow 已加载，恢复 %d 个任务，迁移 %d 个目录，导入 %d 个外部音色", len(recovered), len(moved), len(discovery.imported))
 
     def debug_page(self) -> HTMLResponse:
@@ -409,7 +411,16 @@ class VoiceCloneFlowPlugin(Star):
         manager = getattr(self.context, "provider_manager", None)
         for item in getattr(manager, "providers_config", []) if manager else []:
             if isinstance(item, dict) and str(item.get("id", "")).startswith("voice_clone_flow_remote_"):
-                providers.append({"id": item.get("id"), "name": item.get("display_name", item.get("id")), "enabled": bool(item.get("enable", True)), "voice_id": item.get("voice_id", "")})
+                providers.append(
+                    {
+                        "id": item.get("id"),
+                        "name": item.get("display_name", item.get("id")),
+                        "enabled": bool(item.get("enable", True)),
+                        "voice_id": item.get("character", ""),
+                        "type": item.get("type", ""),
+                        "api_base": item.get("api_base", ""),
+                    }
+                )
         return {
             "mode": self.remote_config.mode,
             "configured": bool(self.remote_config.base_url and self.remote_config.token),
@@ -432,6 +443,76 @@ class VoiceCloneFlowPlugin(Star):
         if "timeout_seconds" in payload:
             current.timeout_seconds = float(payload.get("timeout_seconds"))
         self.remote_config_store.save(current)
+        self._ensure_remote_delivery_worker()
+
+    def _ensure_remote_delivery_worker(self) -> None:
+        if self.remote_config.mode != "remote":
+            return
+        if self.remote_delivery_task is not None and not self.remote_delivery_task.done():
+            return
+        try:
+            task = asyncio.create_task(self._remote_provider_delivery_loop())
+        except RuntimeError:
+            return
+        self.remote_delivery_task = task
+        self.background_tasks.add(task)
+
+        def finished(done: asyncio.Task) -> None:
+            self.background_tasks.discard(done)
+            if self.remote_delivery_task is done:
+                self.remote_delivery_task = None
+
+        task.add_done_callback(finished)
+
+    async def _remote_provider_delivery_loop(self) -> None:
+        while self.remote_config.mode == "remote":
+            try:
+                client = self._remote_client()
+                delivery = await asyncio.to_thread(client.claim_provider_delivery)
+                if delivery:
+                    await self._process_remote_provider_delivery(client, delivery)
+                    continue
+                self.remote_last_error = ""
+            except asyncio.CancelledError:
+                raise
+            except (RemoteStudioError, RemoteStudioConfigError) as exc:
+                self.remote_last_error = str(exc)
+            except Exception as exc:
+                self.remote_last_error = f"Provider 投递处理失败：{exc}"
+                logger.warning("VoiceClone Flow Provider 投递处理失败：%s", exc)
+            await asyncio.sleep(2)
+
+    async def _process_remote_provider_delivery(self, client: RemoteStudioClient, delivery: dict) -> None:
+        task_id = str(delivery.get("id", "")).strip()
+        if not task_id:
+            raise ValueError("Studio Provider 投递缺少任务 ID")
+        try:
+            config = normalize_delivery_provider(
+                delivery.get("provider_config", {}),
+                api_base=self.remote_config.base_url,
+                api_key=self.remote_config.token,
+            )
+            provider_id = await apply_remote_provider(self.context, config)
+            result = await finalize_remote_provider_delivery(
+                client,
+                task_id,
+                provider_id,
+                config,
+            )
+            self.remote_last_error = "" if result["verified"] else str(result.get("error", "短语音测试失败"))
+        except Exception as exc:
+            message = str(exc)
+            try:
+                await asyncio.to_thread(
+                    client.report_provider_delivery,
+                    task_id,
+                    "failed",
+                    "Provider 注册失败",
+                    message,
+                )
+            except RemoteStudioError:
+                pass
+            raise
 
     def _remote_client(self) -> RemoteStudioClient:
         return RemoteStudioClient(self.remote_config)
@@ -484,7 +565,14 @@ class VoiceCloneFlowPlugin(Star):
             for metadata in voices:
                 asset = self.voice_registry.upsert_remote_voice(metadata)
                 remote_ids.add(asset.remote_voice_id)
-                await apply_remote_provider(self.context, build_remote_provider_config(asset))
+                await apply_remote_provider(
+                    self.context,
+                    build_remote_provider_config(
+                        asset,
+                        api_base=self.remote_config.base_url,
+                        api_key=self.remote_config.token,
+                    ),
+                )
             self.voice_registry.disable_missing_remote_voice_ids(remote_ids)
             from datetime import datetime, timezone
             self.remote_last_sync = datetime.now(timezone.utc).isoformat()

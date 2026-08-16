@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.3.1-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.2-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
@@ -321,6 +321,8 @@ AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
 ---
 
 ## 常见问题
+
+完整的 NapCat、AstrBot、FRP、VoiceClone Studio 与 GPT-SoVITS 通信配置见 [通信与部署说明](docs/communication-deployment.md)。
 
 ### Linux 安装时提示缺少系统依赖
 
