@@ -13,7 +13,19 @@
     <span class="status" id="connectionStatus">正在读取 Provider</span>
   </header>
 
-  <section class="runtime-bar" id="runtimeBar">
+  <section class="section remote-panel" id="remotePanel">
+    <div class="section-heading"><div><h2>运行模式</h2><p>如果您使用的是轻量服务器，建议在此切换远程模式。</p></div><span class="status" id="remoteStatus">正在读取</span></div>
+    <div class="remote-controls">
+      <label class="field compact"><span>模式</span><select id="remoteMode"><option value="local">本地模式</option><option value="remote">远程连接模式</option></select></label>
+      <label class="field"><span>Studio 地址</span><input id="remoteBaseUrl" type="text" placeholder="http://服务器可访问的地址:端口"></label>
+      <label class="field"><span>Token</span><input id="remoteToken" type="text" spellcheck="false"></label>
+      <label class="field compact"><span>超时（秒）</span><input id="remoteTimeout" type="number" min="1" value="300"></label>
+    </div>
+    <div class="remote-actions"><button id="remoteTest" class="secondary" type="button">测试连接</button><button id="remoteSync" type="button">同步远程音色</button><span id="remoteMessage" role="status"></span></div>
+    <div id="remoteVoices" class="remote-voices" hidden></div>
+  </section>
+
+  <section class="runtime-bar" id="runtimeBar" data-local-only>
     <div class="runtime-summary">
       <strong>运行环境</strong>
       <span class="resource-state" id="ffmpegState">FFmpeg 检查中</span>
@@ -34,7 +46,7 @@
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" id="localWorkspace" data-local-only>
     <div class="section-heading"><div><h2>素材处理任务</h2><p>将任意格式的视频或音频处理为纯人声片段与文字对照，供 TTS 模型训练使用。</p></div><span class="phase-tag" id="taskState">未开始</span></div>
     <form id="taskForm" class="task-form">
       <label class="field"><span>视频或音频素材</span><input id="materialInput" type="file" accept="audio/*,video/*" required></label>

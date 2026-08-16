@@ -12,6 +12,52 @@ function errorText(error) {
   return error?.message || String(error);
 }
 
+let remoteMode = "local";
+function renderRemoteVoices(voices) {
+  const box = $("remoteVoices");
+  box.replaceChildren();
+  if (!voices?.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const table = document.createElement("div");
+  table.className = "remote-voice-list";
+  for (const voice of voices) {
+    const row = document.createElement("div");
+    row.className = "remote-voice-row";
+    row.textContent = `${voice.name || voice.remote_voice_id} · ${voice.reference_language || "zh"} · ${voice.status || "ready"} · ${voice.reference_text || "无参考文本"}`;
+    table.append(row);
+  }
+  box.append(table);
+}
+function applyRemoteMode() {
+  remoteMode = $("remoteMode").value;
+  for (const item of document.querySelectorAll("[data-local-only]")) item.hidden = remoteMode === "remote";
+  $("remoteBaseUrl").disabled = remoteMode !== "remote";
+  $("remoteToken").disabled = remoteMode !== "remote";
+  $("remoteTimeout").disabled = remoteMode !== "remote";
+}
+async function loadRemoteStatus() {
+  const data = await bridge.apiGet("remote/status");
+  const config = data.config || {};
+  $("remoteMode").value = data.mode || "local";
+  $("remoteBaseUrl").value = config.base_url || "";
+  $("remoteToken").value = config.token || "";
+  $("remoteTimeout").value = config.timeout_seconds || 300;
+  $("remoteStatus").textContent = data.last_error ? `异常：${data.last_error}` : data.configured ? "已配置" : "未配置";
+  renderRemoteVoices(data.voices || []);
+  applyRemoteMode();
+}
+async function remoteAction(route) {
+  const payload = { mode: $("remoteMode").value, base_url: $("remoteBaseUrl").value.trim(), token: $("remoteToken").value, timeout_seconds: Number($("remoteTimeout").value) };
+  $("remoteMessage").textContent = "处理中...";
+  $("remoteTest").disabled = true; $("remoteSync").disabled = true;
+  try {
+    const data = await bridge.apiPost(route, payload);
+    $("remoteMessage").textContent = route.endsWith("sync") ? `已同步 ${data.count || 0} 个音色` : "连接成功";
+    await loadRemoteStatus();
+  } catch (error) { $("remoteMessage").textContent = errorText(error); }
+  finally { $("remoteTest").disabled = false; $("remoteSync").disabled = false; }
+}
+
 function update() {
   $("createTask").disabled = !modelReady || !$("providerSelect").value
     || !$("materialInput").files.length || !$("authorized").checked;
@@ -149,6 +195,9 @@ $("toggleRuntime").onclick = () => {
   details.hidden = !details.hidden;
   $("toggleRuntime").setAttribute("aria-expanded", String(!details.hidden));
 };
+$("remoteMode").onchange = applyRemoteMode;
+$("remoteTest").onclick = () => remoteAction("remote/test");
+$("remoteSync").onclick = () => remoteAction("remote/sync");
 $("refreshRuntime").onclick = loadRuntimeStatus;
 $("installFfmpeg").onclick = () => runtimeAction("runtime/ffmpeg/install");
 $("deleteFfmpeg").onclick = () => runtimeAction("runtime/ffmpeg/delete");
@@ -426,6 +475,7 @@ async function initialize() {
     return;
   }
   providers().catch(showProviderError);
+  loadRemoteStatus().catch((error) => { $("remoteMessage").textContent = `远程状态读取失败：${errorText(error)}`; });
   loadRuntimeStatus();
   loadVoices().catch((error) => { $("providerActionResult").textContent = `音色读取失败：${errorText(error)}`; });
 }

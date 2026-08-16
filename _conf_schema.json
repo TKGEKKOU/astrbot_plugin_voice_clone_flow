@@ -6,6 +6,22 @@
     "default": "",
     "_special": "select_provider_stt"
   },
+  "remote_mode": {
+    "type": "string",
+    "description": "运行模式",
+    "hint": "远程模式将推理请求转发到另一台电脑上的 VoiceClone Studio。",
+    "default": "local",
+    "options": ["local", "remote"]
+  },
+  "remote_studio": {
+    "type": "object",
+    "description": "远程 VoiceClone Studio",
+    "items": {
+      "base_url": {"type": "string", "description": "Studio 地址", "default": ""},
+      "token": {"type": "string", "description": "Studio Token", "default": ""},
+      "timeout_seconds": {"type": "int", "description": "远程请求超时（秒）", "default": 300}
+    }
+  },
   "gpt_sovits": {
     "type": "object",
     "description": "GPT-SoVITS \u8bed\u97f3\u540e\u7aef",

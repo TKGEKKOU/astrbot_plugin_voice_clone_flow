@@ -31,6 +31,9 @@ if __package__:
     from .voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from .voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from .voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
+    from .voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
+    from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
 else:
     from voice_clone_flow import PLUGIN_NAME
     from voice_clone_flow.astrbot_api import ASRTestError, list_stt_providers, run_stt_test
@@ -52,6 +55,9 @@ else:
     from voice_clone_flow.path_actions import open_voice_directory, open_voices_root
     from voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
+    from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
+    from voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
+    from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config
 
 
 class VoiceCloneFlowPlugin(Star):
@@ -59,6 +65,20 @@ class VoiceCloneFlowPlugin(Star):
         super().__init__(context)
         self.config = config
         self.data_dir = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
+        self.remote_config_store = RemoteStudioConfigStore(self.data_dir)
+        try:
+            self.remote_config = self.remote_config_store.load()
+        except RemoteStudioConfigError:
+            self.remote_config = RemoteStudioConfig()
+        configured_remote = config.get("remote_studio", {}) if isinstance(config.get("remote_studio", {}), dict) else {}
+        if not self.remote_config_store.path.is_file() and (configured_remote or config.get("remote_mode")):
+            self.remote_config.mode = str(config.get("remote_mode") or self.remote_config.mode)
+            self.remote_config.base_url = str(configured_remote.get("base_url", self.remote_config.base_url) or "")
+            self.remote_config.token = str(configured_remote.get("token", self.remote_config.token) or "")
+            self.remote_config.timeout_seconds = float(configured_remote.get("timeout_seconds", self.remote_config.timeout_seconds))
+        self.remote_last_error = ""
+        self.remote_last_check = None
+        self.remote_last_sync = None
         self.stt_provider_id = str(config.get("stt_provider_id", "")).strip()
         self.separator_model_path = str(config.get("separator_model_path", "")).strip()
         self.separator_model_url = str(config.get("separator_model_url", "")).strip()
@@ -148,6 +168,9 @@ class VoiceCloneFlowPlugin(Star):
         context.register_web_api(f"/{PLUGIN_NAME}/gpt-sovits/voices/<voice_id>/open-folder", self.page_gpt_voice_folder, ["POST"], "Open voice folder")
         context.register_web_api(f"/{PLUGIN_NAME}/gpt-sovits/voices/open-folder", self.page_gpt_voices_folder, ["POST"], "Open voices root folder")
         context.register_web_api(f"/{PLUGIN_NAME}/gpt-sovits/synthesize", self.page_gpt_synthesize, ["POST"], "Synthesize voice")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/status", self.page_remote_status, ["GET"], "Get remote Studio status")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/test", self.page_remote_test, ["POST"], "Test remote Studio connection")
+        context.register_web_api(f"/{PLUGIN_NAME}/remote/sync", self.page_remote_sync, ["POST"], "Sync remote Studio voices")
         context.register_web_api(
             f"/{PLUGIN_NAME}/tasks/create/<provider_id>/<language>/<authorization>",
             self.page_create_task,
@@ -206,6 +229,8 @@ class VoiceCloneFlowPlugin(Star):
         )
 
     async def page_separator_install(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能管理本地人声分离模型", status_code=409)
         started = self.separator_resources.start_install(self.separator_model_path)
         return json_response({**self.separator_resources.status(), "started": started})
 
@@ -223,6 +248,8 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"ffmpeg": self.ffmpeg_resources.status(), "separator": separator})
 
     async def page_ffmpeg_install(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能管理本地 FFmpeg", status_code=409)
         return json_response({**self.ffmpeg_resources.status(), "started": self.ffmpeg_resources.start_install()})
 
     async def page_ffmpeg_delete(self):
@@ -236,6 +263,8 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"runtime": self.gpt_install.status(), "service": service, "voices": len(self.voice_registry.list())})
 
     async def page_gpt_install(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能管理本地 GPT-SoVITS", status_code=409)
         payload = await request.json(default={})
         url = str(payload.get("url", "")).strip() if isinstance(payload, dict) else ""
         try:
@@ -245,9 +274,13 @@ class VoiceCloneFlowPlugin(Star):
             return error_response(str(exc), status_code=400)
 
     async def page_gpt_install_cancel(self):
+        if self.remote_config.mode == "remote":
+            return json_response({"cancelled": False, "mode": "remote"})
         return json_response({"cancelled": self.gpt_install.cancel_install(), **self.gpt_install.status()})
 
     async def page_gpt_delete(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能删除本地 GPT-SoVITS", status_code=409)
         try:
             self.gpt_adapter.stop_service()
             return json_response(self.gpt_install.remove_install())
@@ -255,6 +288,8 @@ class VoiceCloneFlowPlugin(Star):
             return error_response(str(exc), status_code=409)
 
     async def page_gpt_start(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能启动本地 GPT-SoVITS", status_code=409)
         if self.gpt_starting:
             return json_response({"starting": True, "started": False})
         if self.gpt_adapter.is_alive():
@@ -276,6 +311,8 @@ class VoiceCloneFlowPlugin(Star):
             self.gpt_starting = False
 
     async def page_gpt_stop(self):
+        if self.remote_config.mode == "remote":
+            return json_response({"mode": "remote", "stopped": False})
         self.gpt_starting = False
         await asyncio.to_thread(self.gpt_adapter.stop_service)
         return json_response(self.gpt_adapter.status())
@@ -365,6 +402,69 @@ class VoiceCloneFlowPlugin(Star):
             "text_language": asset.reference_language,
         }
 
+    def _remote_status_payload(self) -> dict:
+        return {
+            "mode": self.remote_config.mode,
+            "configured": bool(self.remote_config.base_url and self.remote_config.token),
+            "config": self.remote_config.visible(),
+            "last_error": self.remote_last_error,
+            "last_check": self.remote_last_check,
+            "last_sync": self.remote_last_sync,
+            "voices": [item.__dict__ for item in self.voice_registry.list() if item.source == "remote"],
+        }
+
+    def _save_remote_payload(self, payload: dict) -> None:
+        current = self.remote_config
+        if "mode" in payload:
+            current.mode = str(payload.get("mode") or "local")
+        if "base_url" in payload:
+            current.base_url = str(payload.get("base_url") or "")
+        if "token" in payload:
+            current.token = str(payload.get("token") or "")
+        if "timeout_seconds" in payload:
+            current.timeout_seconds = float(payload.get("timeout_seconds"))
+        self.remote_config_store.save(current)
+
+    def _remote_client(self) -> RemoteStudioClient:
+        return RemoteStudioClient(self.remote_config)
+
+    async def page_remote_status(self):
+        return json_response(self._remote_status_payload())
+
+    async def page_remote_test(self):
+        payload = await request.json(default={})
+        try:
+            if isinstance(payload, dict) and payload:
+                self._save_remote_payload(payload)
+            self._remote_client().health()
+            from datetime import datetime, timezone
+            self.remote_last_check = datetime.now(timezone.utc).isoformat()
+            self.remote_last_error = ""
+            return json_response({**self._remote_status_payload(), "state": "connected"})
+        except (RemoteStudioError, RemoteStudioConfigError) as exc:
+            self.remote_last_error = str(exc)
+            return error_response(str(exc), status_code=502)
+
+    async def page_remote_sync(self):
+        try:
+            payload = await request.json(default={})
+            if isinstance(payload, dict) and payload:
+                self._save_remote_payload(payload)
+            voices = await asyncio.to_thread(self._remote_client().list_voices)
+            remote_ids = set()
+            for metadata in voices:
+                asset = self.voice_registry.upsert_remote_voice(metadata)
+                remote_ids.add(asset.remote_voice_id)
+                await apply_remote_provider(self.context, build_remote_provider_config(asset))
+            self.voice_registry.disable_missing_remote_voice_ids(remote_ids)
+            from datetime import datetime, timezone
+            self.remote_last_sync = datetime.now(timezone.utc).isoformat()
+            self.remote_last_error = ""
+            return json_response({**self._remote_status_payload(), "count": len(voices)})
+        except (RemoteStudioError, RemoteStudioConfigError, ValueError) as exc:
+            self.remote_last_error = str(exc)
+            return error_response(str(exc), status_code=502)
+
     async def page_gpt_synthesize(self):
         payload = await request.json(default={})
         if not isinstance(payload, dict):
@@ -389,6 +489,8 @@ class VoiceCloneFlowPlugin(Star):
         return None
 
     async def page_create_task(self, provider_id: str, language: str, authorization: str):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不提供本地素材处理和训练", status_code=409)
         if authorization != "authorized":
             return error_response("必须确认拥有该声音的使用授权", status_code=400)
         model = self._active_separator_model()
@@ -457,6 +559,8 @@ class VoiceCloneFlowPlugin(Star):
 
 
     async def page_task_dataset(self, task_id: str):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不提供本地训练数据集", status_code=409)
         try:
             payload = await request.json(default={})
             rows = payload.get("segments", []) if isinstance(payload, dict) else []
@@ -477,6 +581,8 @@ class VoiceCloneFlowPlugin(Star):
             return error_response(str(exc), status_code=400)
 
     async def page_task_train(self, task_id: str):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不提供本地训练", status_code=409)
         payload = await request.json(default={})
         name = str(payload.get("name", "")).strip() if isinstance(payload, dict) else ""
         language = str(payload.get("language", "zh")).strip() if isinstance(payload, dict) else "zh"

@@ -28,6 +28,10 @@ class VoiceAsset:
     sovits_epochs: int = 30
     training_progress: dict | None = None
     dir_name: str = ""
+    source: str = "local"
+    remote_voice_id: str = ""
+    remote_metadata: dict | None = None
+    remote_provider_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,37 @@ class VoiceRegistry:
         existing = {item.dir_name for item in self.list() if item.dir_name}
         values.setdefault("dir_name", readable_voice_dir_name(name, asset_id, existing))
         return self.save(VoiceAsset(id=asset_id, name=name.strip(), **values))
+
+    def upsert_remote_voice(self, metadata: dict) -> VoiceAsset:
+        remote_id = str(metadata.get("id", "")).strip()
+        if not remote_id:
+            raise ValueError("远程音色缺少稳定 id")
+        asset = next((item for item in self.list() if item.source == "remote" and item.remote_voice_id == remote_id), None)
+        if asset is None:
+            asset = VoiceAsset(
+                id=f"remote_{remote_id}",
+                name=str(metadata.get("name") or remote_id),
+                source="remote",
+                remote_voice_id=remote_id,
+                remote_provider_id=f"voice_clone_flow_remote_{remote_id}",
+            )
+        asset.name = str(metadata.get("name") or asset.name or remote_id)
+        asset.status = str(metadata.get("status") or "ready")
+        asset.reference_language = str(metadata.get("language") or metadata.get("reference_language") or "zh")
+        asset.reference_text = str(metadata.get("reference_text") or "")
+        asset.gpt_weights_path = str(metadata.get("gpt_weights_path") or "")
+        asset.sovits_weights_path = str(metadata.get("sovits_weights_path") or "")
+        asset.refer_audio_path = str(metadata.get("reference_audio_path") or metadata.get("refer_audio_path") or "")
+        asset.remote_metadata = dict(metadata)
+        return self.save(asset)
+
+    def disable_missing_remote_voice_ids(self, remote_ids: set[str]) -> list[VoiceAsset]:
+        changed: list[VoiceAsset] = []
+        for asset in self.list():
+            if asset.source == "remote" and asset.remote_voice_id not in remote_ids and asset.status != "disabled":
+                asset.status = "disabled"
+                changed.append(self.save(asset))
+        return changed
 
     def update_reference(
         self,
