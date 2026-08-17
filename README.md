@@ -12,7 +12,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-555)](LICENSE)
 
-[部署方案](#部署方案) · [快速开始](#快速开始) · [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio) · [核心能力](#核心能力) · [常见问题](#常见问题)
+[部署方案](#部署方案) · [快速开始](#快速开始) · [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio) · [核心能力](#核心能力) · [技术架构](#技术架构) · [常见问题](#常见问题)
 
 </div>
 
@@ -149,6 +149,54 @@ VoiceClone Studio 使用它自己的音色目录。打开 Studio 的“音色与
 本地模式会整理 GPT 权重、SoVITS 权重、参考音频、参考文本和语言，并允许用户在启用 Provider 前复核。
 
 远程模式从 Studio 同步音色元数据，为每个音色创建独立 Provider。服务器只保存远程音色标识和 API 配置，不会检查 Studio 的 Windows 权重路径。Provider 请求通过映射地址到达 Studio，生成的音频再返回 AstrBot。
+
+---
+
+## 技术架构
+
+```mermaid
+flowchart LR
+    subgraph Platform["AstrBot 平台"]
+        direction TB
+        QQ["QQ 用户"] <--> NapCat["NapCat / OneBot"]
+        NapCat <--> AstrBot["AstrBot"]
+        AstrBot <--> Provider["模型提供商与消息输出"]
+    end
+
+    subgraph Flow["VoiceClone Flow 插件"]
+        direction TB
+        Plugin["插件控制与任务编排"]
+        Material["素材处理<br/>提取 · 分离 · 切分 · STT 标注"]
+        Voice["训练与音色管理<br/>审核 · 训练 · 音色登记"]
+        Local["本地推理<br/>GPT-SoVITS v2Pro"]
+        Config["TTS Provider 自动配置"]
+
+        Plugin --> Material --> Voice
+        Voice --> Local
+        Voice --> Config
+        Local --> Config
+    end
+
+    subgraph Remote["可选：其他设备"]
+        direction TB
+        Tunnel["FRPC / HTTP(S)<br/>安全网络连接"]
+        Studio["VoiceClone Studio"]
+        RemoteVoice["远程音色与参考素材"]
+        RemoteRuntime["GPT-SoVITS v2Pro<br/>训练与推理"]
+
+        Tunnel <--> Studio
+        Studio <--> RemoteVoice
+        Studio <--> RemoteRuntime
+    end
+
+    AstrBot <--> Plugin
+    Config -->|"注册或同步"| Provider
+    Provider -->|"TTS 请求"| Plugin
+    Plugin -->|"生成音频"| Provider
+    Plugin -.->|"远程模式（可选）"| Tunnel
+```
+
+本地模式由中间的插件工作流直接完成处理、训练与推理；需要分离算力时，才通过安全网络连接调用右侧设备。两种路径最终都复用 AstrBot 的 Provider 与 NapCat/QQ 消息链路。
 
 ---
 
