@@ -133,35 +133,76 @@ class BilingualTTSDecorator:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    @staticmethod
+    def _provider_id(provider: Any) -> str:
+        try:
+            metadata = provider.meta()
+            provider_id = str(getattr(metadata, "id", "") or "").strip()
+            if provider_id:
+                return provider_id
+        except Exception:
+            pass
+        config = getattr(provider, "provider_config", {})
+        return str(config.get("id", "") if isinstance(config, dict) else "").strip()
+
+    @classmethod
+    def _is_remote_voice_clone_provider(cls, provider: Any) -> bool:
+        return cls._provider_id(provider).startswith("voice_clone_flow_remote_")
+
     async def _render_sentence(self, umo: str, sentence: str) -> None:
+        provider_id = ""
         try:
             tts_provider = await self.context.get_using_tts_provider_async(umo)
             if tts_provider is None:
                 logger.warning("Japanese speech skipped: no TTS provider for session")
                 return
+            provider_id = self._provider_id(tts_provider)
+            logger.info(
+                "VoiceClone speech Provider selected: id=%s, chars=%d",
+                provider_id or "unknown",
+                len(sentence),
+            )
             language = self.target_language
             if language == "auto":
                 default_params = getattr(tts_provider, "default_params", {})
                 language = str(default_params.get("text_lang", "ja")).lower()
 
             speech_input = sentence
-            if language == "ja":
+            if self._is_remote_voice_clone_provider(tts_provider):
+                logger.info(
+                    "VoiceClone speech handed to Studio for translation: id=%s",
+                    provider_id,
+                )
+            elif language == "ja":
                 speech_input = await self.translator.translate(umo, sentence)
                 if not speech_input:
+                    logger.warning(
+                        "Japanese speech skipped: translation returned empty, id=%s",
+                        provider_id or "unknown",
+                    )
                     return
 
             audio_path = await tts_provider.get_audio(speech_input)
             if not audio_path:
-                logger.warning("Japanese speech skipped: TTS returned no audio path")
+                logger.warning(
+                    "Japanese speech skipped: TTS returned no audio path, id=%s",
+                    provider_id or "unknown",
+                )
                 return
+            logger.info("VoiceClone speech audio received: id=%s", provider_id or "unknown")
             await self.context.send_message(
                 umo,
                 MessageChain(chain=[Record(file=audio_path, url=audio_path, text=sentence)]),
             )
+            logger.info("VoiceClone speech sent to session: id=%s", provider_id or "unknown")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.warning("Japanese speech synthesis failed: %s", type(exc).__name__)
+            logger.warning(
+                "Japanese speech synthesis failed: id=%s, error=%s",
+                provider_id or "unknown",
+                type(exc).__name__,
+            )
 
     async def _render_sentences(self, umo: str, sentences: list[str]) -> None:
         for sentence in sentences:
@@ -185,11 +226,17 @@ class BilingualTTSDecorator:
         if not speech_text:
             return
 
+        sentences = self._split_sentences(speech_text)
+        logger.info(
+            "VoiceClone speech reply captured: chars=%d, sentences=%d",
+            len(speech_text),
+            len(sentences),
+        )
+
         # This plugin owns TTS for this result from here onward. AstrBot's
         # built-in TTS branch only processes LLM_RESULT, so this also prevents
         # a second synthesis pass over the visible Chinese text.
         result.result_content_type = ResultContentType.GENERAL_RESULT
 
-        sentences = self._split_sentences(speech_text)
         if sentences:
             self._track(self._render_sentences(event.unified_msg_origin, sentences))

@@ -2,6 +2,14 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.3] - 2026-08-17
+
+### 修复
+
+- 远程 VoiceClone Provider 改为将中文回复直接提交给 Studio，由 Studio 负责日语翻译与语音推理，避免服务器端翻译失败时请求无法到达 Studio。
+- 增加回复捕获、Provider 选择、Studio 交接、音频返回和会话发送阶段日志；日志不输出 Token、API Key 或完整 Provider 配置。
+- 保留普通日语 TTS Provider 的 AstrBot 侧翻译行为，不影响本地模式和其他 TTS Provider。
+
 ## [0.3.2] - 2026-08-17
 
 ### 改进
