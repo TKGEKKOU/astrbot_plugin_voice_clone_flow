@@ -36,6 +36,7 @@
   "gpt_sovits": {
     "type": "object",
     "description": "GPT-SoVITS \u8bed\u97f3\u540e\u7aef",
+    "hint": "仅本地模式使用。远程模式由 VoiceClone Studio 管理 GPT-SoVITS，此处无需填写。",
     "items": {
       "api_base": {"type": "string", "description": "API \u5730\u5740", "default": "http://127.0.0.1:9880"},
       "api_timeout_seconds": {"type": "int", "description": "API \u8d85\u65f6\uff08\u79d2\uff09", "default": 120}
@@ -53,7 +54,7 @@
   "speech_translation": {
     "type": "object",
     "description": "中文文字与日语语音",
-    "hint": "保留中文回复，并通过当前会话模型翻译为日语后生成语音。失败时仅发送中文。",
+    "hint": "保留中文回复并补发语音。远程 VoiceClone Provider 由 Studio 完成翻译；其他日语 TTS 使用 AstrBot 当前会话模型翻译。失败时仅发送中文。",
     "items": {
       "enabled": {"type": "bool", "description": "启用中文文字 + 日语语音", "default": true},
       "target_language": {"type": "string", "description": "语音目标语言", "hint": "自动模式会读取当前 TTS Provider 的 text_lang；中文直接朗读，日语先翻译。", "default": "auto", "options": ["auto", "zh", "ja"]},

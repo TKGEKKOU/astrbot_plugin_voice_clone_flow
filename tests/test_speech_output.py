@@ -1,5 +1,8 @@
 import unittest
 
+from astrbot.api.message_components import Plain
+from astrbot.core.message.message_event_result import ResultContentType
+
 from voice_clone_flow.speech_output import BilingualTTSDecorator
 
 
@@ -42,6 +45,39 @@ class _Translator:
     async def translate(self, umo, text):
         self.inputs.append((umo, text))
         return "日本語"
+
+
+class _Result:
+    def __init__(self, text="", is_llm=False):
+        self.chain = [Plain(text)] if text else []
+        self._is_llm = is_llm
+        self.result_content_type = (
+            ResultContentType.LLM_RESULT if is_llm else ResultContentType.GENERAL_RESULT
+        )
+
+    def is_llm_result(self):
+        return self._is_llm
+
+
+class _Event:
+    def __init__(self, result):
+        self.result = result
+        self.extras = {}
+        self.unified_msg_origin = "umo-1"
+
+    def get_result(self):
+        return self.result
+
+    def set_extra(self, key, value):
+        self.extras[key] = value
+
+    def get_extra(self, key, default=None):
+        return self.extras.get(key, default)
+
+
+class _Response:
+    def __init__(self, text):
+        self.completion_text = text
 
 
 class SpeechOutputTests(unittest.IsolatedAsyncioTestCase):
@@ -88,6 +124,50 @@ class SpeechOutputTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(provider.inputs, ["你好"])
         self.assertEqual(context.sent, [])
+
+    async def test_cached_llm_marker_allows_general_result_and_prefers_visible_text(self):
+        provider = _Provider("voice_clone_flow_remote_voice-1")
+        decorator = BilingualTTSDecorator(_Context(provider), _Translator(), target_language="ja")
+        event = _Event(_Result("最终发送给 QQ 的文字", is_llm=False))
+        decorator.capture_llm_response(event, _Response("模型原始回复"))
+
+        await decorator.decorate(event)
+        await decorator.wait_for_tasks()
+
+        self.assertEqual(provider.inputs, ["最终发送给 QQ 的文字"])
+
+    async def test_cached_llm_text_is_fallback_when_result_has_no_plain_text(self):
+        provider = _Provider("voice_clone_flow_remote_voice-1")
+        decorator = BilingualTTSDecorator(_Context(provider), _Translator(), target_language="ja")
+        event = _Event(_Result(is_llm=False))
+        decorator.capture_llm_response(event, _Response("模型完整回复"))
+
+        await decorator.decorate(event)
+        await decorator.wait_for_tasks()
+
+        self.assertEqual(provider.inputs, ["模型完整回复"])
+
+    async def test_same_event_is_scheduled_only_once(self):
+        provider = _Provider("voice_clone_flow_remote_voice-1")
+        decorator = BilingualTTSDecorator(_Context(provider), _Translator(), target_language="ja")
+        event = _Event(_Result("只发送一次", is_llm=False))
+        decorator.capture_llm_response(event, _Response("只发送一次"))
+
+        await decorator.decorate(event)
+        await decorator.decorate(event)
+        await decorator.wait_for_tasks()
+
+        self.assertEqual(provider.inputs, ["只发送一次"])
+
+    async def test_general_plugin_message_without_llm_marker_is_not_spoken(self):
+        provider = _Provider("voice_clone_flow_remote_voice-1")
+        decorator = BilingualTTSDecorator(_Context(provider), _Translator(), target_language="ja")
+        event = _Event(_Result("命令执行成功", is_llm=False))
+
+        await decorator.decorate(event)
+        await decorator.wait_for_tasks()
+
+        self.assertEqual(provider.inputs, [])
 
 
 if __name__ == "__main__":

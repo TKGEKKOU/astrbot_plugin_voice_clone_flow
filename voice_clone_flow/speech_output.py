@@ -29,6 +29,8 @@ _EXPLANATORY_PREFIXES = (
     "以下是日文翻译",
     "译文",
 )
+_LLM_TEXT_EXTRA = "_voice_clone_flow_llm_text"
+_TTS_SCHEDULED_EXTRA = "_voice_clone_flow_tts_scheduled"
 
 
 def clean_speech_text(text: str) -> str:
@@ -133,6 +135,15 @@ class BilingualTTSDecorator:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    def capture_llm_response(self, event: Any, response: Any) -> None:
+        if response is None or bool(getattr(response, "is_chunk", False)):
+            return
+        text = str(getattr(response, "completion_text", "") or "").strip()
+        if not text:
+            return
+        event.set_extra(_LLM_TEXT_EXTRA, text)
+        logger.info("VoiceClone complete LLM reply captured: chars=%d", len(text))
+
     @staticmethod
     def _provider_id(provider: Any) -> str:
         try:
@@ -210,14 +221,28 @@ class BilingualTTSDecorator:
 
     async def decorate(self, event: Any) -> None:
         result = event.get_result()
-        if result is None or not result.is_llm_result():
+        if result is None:
             return
 
-        original_text = "\n".join(
+        is_llm_result = bool(result.is_llm_result())
+        cached_text = str(event.get_extra(_LLM_TEXT_EXTRA, "") or "").strip()
+        if not is_llm_result and not cached_text:
+            logger.debug("VoiceClone speech skipped: result has no LLM marker")
+            return
+        if bool(event.get_extra(_TTS_SCHEDULED_EXTRA, False)):
+            logger.info("VoiceClone speech skipped: task already scheduled")
+            return
+
+        visible_text = "\n".join(
             component.text
             for component in result.chain
             if isinstance(component, Plain) and component.text.strip()
         )
+        original_text = visible_text.strip() or cached_text
+        if visible_text.strip():
+            logger.info("VoiceClone speech uses final visible reply: chars=%d", len(original_text))
+        elif cached_text:
+            logger.info("VoiceClone speech uses cached LLM reply: chars=%d", len(original_text))
         speech_text = (
             clean_speech_text(original_text)
             if self.clean_special_characters
@@ -236,7 +261,9 @@ class BilingualTTSDecorator:
         # This plugin owns TTS for this result from here onward. AstrBot's
         # built-in TTS branch only processes LLM_RESULT, so this also prevents
         # a second synthesis pass over the visible Chinese text.
-        result.result_content_type = ResultContentType.GENERAL_RESULT
+        if is_llm_result:
+            result.result_content_type = ResultContentType.GENERAL_RESULT
 
         if sentences:
+            event.set_extra(_TTS_SCHEDULED_EXTRA, True)
             self._track(self._render_sentences(event.unified_msg_origin, sentences))

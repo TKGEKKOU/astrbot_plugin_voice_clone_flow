@@ -4,7 +4,7 @@ short_desc: 从音视频素材处理、训练到 AstrBot 音色管理的一站�
 desc: >-
   一站式完成音视频素材的音频提取、人声分离、语音切分、STT 标注、片段审核、
   GPT-SoVITS 训练、音色登记和 AstrBot TTS Provider 接入。支持多语言文字与语音消息组合。
-version: 0.3.3
+version: 0.3.4
 author: TKGEKKOU
 repo: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow
 astrbot_version: ">=4.24,<5"

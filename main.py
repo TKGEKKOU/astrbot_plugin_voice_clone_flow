@@ -785,6 +785,13 @@ class VoiceCloneFlowPlugin(Star):
         if self.speech_decorator is not None:
             await self.speech_decorator.decorate(event)
 
+    @filter.on_llm_response()
+    async def capture_voice_llm_response(self, event: AstrMessageEvent, response) -> None:
+        """Preserve the complete model reply when later plugins rewrite its result type."""
+
+        if self.speech_decorator is not None:
+            self.speech_decorator.capture_llm_response(event, response)
+
     async def terminate(self) -> None:
         for task in self.background_tasks:
             task.cancel()
