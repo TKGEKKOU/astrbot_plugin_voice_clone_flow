@@ -1,30 +1,66 @@
 <div align="center">
 
-# VoiceClone Flow
+# 音色工作流 | 分布式训练与推理
 
-**从音视频素材到音色管理**
+**从音视频素材到 AstrBot 语音输出的一站式 GPT-SoVITS 工作流**
 
-面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
+支持服务器本地运行、远程算力卸载与本地训练 + 远程推理三种平行部署方式。
 
-[![Version](https://img.shields.io/badge/version-0.3.7-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.8-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-555)](LICENSE)
 
-[功能](#核心能力) · [安装](#快速开始) · [配置](#系统与参考配置) · [流程](#处理链路) · [音色接入](#音色管理与-provider模型提供商-接入) · [架构](#技术架构) · [安全](#声音授权与安全)
+[三种部署方案](#三种平行部署方案) · [快速开始](#快速开始) · [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio) · [核心能力](#核心能力) · [常见问题](#常见问题)
 
 </div>
 
-VoiceClone Flow 将音视频素材处理、语音标注、GPT-SoVITS 训练、音色管理和 AstrBot TTS Provider 接入整合为一条完整工作流。
+VoiceClone Flow 将素材处理、语音标注、GPT-SoVITS 训练、音色管理、TTS Provider 配置和语音消息输出整合为一条完整工作流。它既可以在 AstrBot 服务器上独立运行，也可以把训练与推理交给另一台高性能设备，让轻量服务器只负责机器人和消息通信。
 
-从一段视频或音频开始，插件可以完成音频提取、人声分离、语音切分、STT 标注、片段审核和模型训练，并将最终音色登记为 AstrBot 可直接使用的 `GSV TTS(Local)` Provider。
+> [!TIP]
+> **轻量服务器用户可以选择远程模式。** 单独下载 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)，在另一台设备按需开启 GPT-SoVITS 和 FRPC。不用语音时一键关闭，可以释放显存和后台进程，也不需要为云服务器长期配置 GPU。本地全流程与混合部署同样是完整支持的平行方案。
 
 > [!IMPORTANT]
-> 基于 **GPT-SoVITS v2Pro**。运行环境、模型、训练素材和训练结果文件统一保存在 AstrBot 插件数据目录。
+> 本项目基于 **GPT-SoVITS v2Pro**。VoiceClone Studio 是独立应用，不包含在插件安装包中：
+> - [VoiceClone Studio 项目主页](https://github.com/TKGEKKOU/voiceclone-studio)
+> - [VoiceClone Studio Releases 下载](https://github.com/TKGEKKOU/voiceclone-studio/releases)
 
 > [!WARNING]
-> 仅处理你本人拥有或已获得明确授权的音视频素材。
+> 仅处理你本人拥有或已经获得明确授权的音视频与声音素材。
+
+---
+
+## 三种平行部署方案
+
+| 方案 | AstrBot 服务器 | 另一台设备 | 适合场景 |
+| --- | --- | --- | --- |
+| **本地全流程** | 素材处理、训练、推理、Provider 全部运行 | 不需要 | 高性能设备直接运行 AstrBot；希望部署集中、链路最短 |
+| **远程 Studio** | 运行 AstrBot、NapCat 和插件 | Studio 负责模型、音色、训练与推理 | 轻量云服务器；另一台设备有 NVIDIA GPU；希望分离算力 |
+| **混合部署** | 保留消息处理和部分插件能力 | 按需承担训练、音色管理或推理 | 已有本地音色和服务器环境；需要灵活分工或逐步迁移 |
+
+远程模式属于**控制端与算力端解耦的分布式部署**。它不是多机并行训练集群：AstrBot 负责消息、会话、Provider 和 QQ 通信，VoiceClone Studio 负责资源密集型的模型运行与音频生成。
+
+```mermaid
+flowchart LR
+    QQ["QQ 用户"] <--> NC["NapCat"]
+    NC <--> AB["轻量服务器：AstrBot"]
+    AB --> PL["VoiceClone Flow 插件"]
+    PL -->|"服务器映射地址"| FRPS["FRPS"]
+    FRPS <-->|"加密鉴权隧道"| FRPC["本地设备：FRPC"]
+    FRPC --> ST["VoiceClone Studio"]
+    ST --> GSV["GPT-SoVITS v2Pro"]
+    GSV -->|"生成音频"| ST
+    ST -->|"音频回传"| PL
+```
+
+远程模式的实际收益：
+
+- 1 核 2G 等轻量服务器无需加载 GPT-SoVITS 模型。
+- Windows 本地电脑负责 NVIDIA 驱动、CUDA、模型和音色文件，减少 Linux 环境配置。
+- 语音服务可按需开启；关闭后停止 GPT-SoVITS 与 Studio 管理的 FRPC。
+- 音频仍由 AstrBot 的 TTS Provider 链路交给 NapCat/QQ，机器人部署方式不变。
+- Token、模型路径和音色路径保留在各自设备，不要求服务器识别 Windows 文件路径。
 
 ---
 
@@ -32,23 +68,24 @@ VoiceClone Flow 将音视频素材处理、语音标注、GPT-SoVITS 训练、�
 
 | 能力 | 说明 |
 | --- | --- |
-| 音视频素材处理 | 通过 FFmpeg 从常见视频或音频格式中提取标准音频 |
-| 人声分离与切片 | 使用 HT-Demucs ONNX 分离人声，通过 VAD 生成有效语音片段 |
-| AstrBot STT 标注 | 复用 AstrBot 已配置的 STT Provider 批量生成训练文本 |
-| 片段审核 | 支持逐段试听、文本修订、片段选择与训练数据生成 |
-| GPT-SoVITS 训练 | 提供训练预设、自定义 Epoch、实时进度和训练日志 |
-| 音色管理 | 管理训练成果与外部音色，维护参考音频、文本和语言 |
-| Provider 接入 | 创建或更新 AstrBot `GSV TTS(Local)` Provider |
-| 组合消息输出 | 支持中文文字配合中文或日语语音，长语音按顺序分段发送 |
-| 生命周期管理 | 管理运行环境下载、TTS 服务启停和临时数据清理 |
+| 多方案部署 | 本地全流程、远程 VoiceClone Studio、混合部署可按硬件条件选择 |
+| 远程算力与音色同步 | 通过 FRP/HTTP(S) 调用另一台设备，自动同步音色并创建独立远程 Provider |
+| 素材生产流水线 | FFmpeg 音频提取、HT-Demucs 人声分离、VAD 切片、AstrBot STT 标注 |
+| 人工审核 | 逐段试听、修改识别文本、排除不合格片段后再生成训练数据 |
+| GPT-SoVITS 训练 | 训练预设、自定义 Epoch、实时进度、日志和成果登记 |
+| 音色管理 | 管理训练成果和外部音色，维护参考音频、参考文本与语言 |
+| Provider 自动配置 | 本地音色配置为 `GSV TTS(Local)`；远程音色配置为 `GSVI TTS(API)` |
+| 多语言组合输出 | 保留中文文字，可配合中文语音或翻译后的日语语音输出 |
+| 运行环境管理 | Windows/Linux 检测、GPT-SoVITS、FFmpeg、分离模型下载与状态管理 |
+| 安全与清理 | Token 鉴权、路径边界检查、临时数据和生成音频定时清理 |
 
 ---
 
 ## 快速开始
 
-### 安装
+### 1. 安装插件
 
-在 AstrBot 插件市场搜索 `VoiceClone Flow`，或手动安装：
+在 AstrBot 插件市场搜索“音色工作流”，或手动安装：
 
 ```bash
 cd AstrBot/data/plugins
@@ -57,27 +94,93 @@ git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
 
 安装后在 AstrBot 插件管理页重载插件。
 
-### 基础配置
+### 2A. 本地全流程
 
-1. 在 AstrBot“模型提供商”页面启用一个 STT Provider。
-2. 在 VoiceClone Flow 插件配置中选择对应的 ASR Provider。
-3. 进入插件页面准备 FFmpeg、人声分离模型和 GPT-SoVITS 运行环境。
-4. 上传素材并完成片段审核与训练。
-5. 登记音色并更新 `voice_clone_flow_gsv` Provider。
+1. 在插件页面选择**本地模式**。
+2. 在 AstrBot“模型提供商”中启用一个 STT Provider，并在插件中选择它。
+3. 准备 FFmpeg、人声分离模型和 GPT-SoVITS v2Pro 运行环境。
+4. 上传素材，完成切片审核、训练数据生成和模型训练。
+5. 登记音色并自动配置 `GSV TTS(Local)` Provider。
 
-插件复用 AstrBot Provider，不重复保存 STT API Key。
+本地模式不会显示 Studio 地址、Studio Token、FRP 或远程 Provider 配置。
 
-### 远程工作室模式
+### 2B. 轻量服务器 + VoiceClone Studio
 
-如果服务器配置较低，可以使用独立应用 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)。服务器只运行 AstrBot、VoiceClone Flow 和 NapCat，把 GPT-SoVITS 推理和训练交给另一台高性能电脑。进入插件页面顶部切换为“远程连接模式”，填写从 AstrBot 服务器能够访问的 Studio `http://` 或 `https://` 地址和 Token，然后测试连接并手动同步远程音色。
+1. 从 [VoiceClone Studio Releases](https://github.com/TKGEKKOU/voiceclone-studio/releases) 下载并在高性能电脑启动 Studio。
+2. 在服务器插件页面选择**远程连接模式**。
+3. 按 Studio 页面顺序设置 Studio Token、服务器 FRPS 地址和 FRP Token。
+4. 启动 FRPC，等待 Studio 显示“远程可用”。
+5. 将 Studio 生成的服务器侧地址和同一个 Studio Token 填入插件。
+6. 在插件中测试连接、同步远程音色并确认远程 Provider。
+7. 需要语音时在 Studio 开启“语音服务总开关”；不用时关闭以释放本地算力。
 
-这是一种“控制端与算力端解耦”的分布式部署方案：AstrBot 负责消息、Provider 和 QQ 通信，Studio 负责模型运行与音频生成。它不是多机并行训练集群，而是把资源密集型任务从轻量服务器分离到本地电脑。也可以采用混合方案：服务器保留插件和消息处理，本地 Studio 负责训练、音色管理与推理。
+服务器插件中的“GPT-SoVITS 语音后端”在远程模式下留空。远程模式不会启动、安装或探测服务器本地 GPT-SoVITS。
 
-远程模式只负责推理和音色同步，训练仍在 Studio 所在电脑完成；插件不会在服务器启动或安装 GPT-SoVITS，也不会检查 Windows 权重路径。一个远程音色对应一个独立 Provider。FRP 或其他网络通道需要用户自行建立，`127.0.0.1` 表示发起请求的服务器本机，只有映射到服务器本机端口时才可使用。
+### 2C. 混合部署
 
-远程 Studio 接口约定见 [`docs/remote-studio-api.md`](docs/remote-studio-api.md)。
+1. 根据现有环境决定训练和推理分别运行在哪台设备。
+2. 需要服务器本地推理时选择本地模式并使用 `GSV TTS(Local)`。
+3. 需要另一台设备承担推理时切换远程模式并同步 Studio 音色。
+4. 两种模式的配置分别保存，切换模式不会要求重新训练音色。
 
-远程模式页面同时提供服务器 FRP 准备检查。该功能新建独立的 `frps-voiceclone.service`，控制端口为 `7001`，默认映射端口为 `19090`；不会修改或删除已有的 `/etc/frp/frps.toml`、`frps.service` 或 `7000` 端口。首次准备时会按服务器架构下载 FRP，并写入独立配置 `/etc/frp/frps-voiceclone.toml`。AstrBot 进程需要拥有写入 `/etc/frp`、`/etc/systemd/system` 和执行 `systemctl` 的权限。
+混合部署不是同时重复运行两套推理服务，而是按任务、设备状态和算力需求选择当前使用的后端。
+
+详细端口、Token 和 NapCat/AstrBot 配置见 [通信与部署说明](docs/communication-deployment.md)。Studio API 契约见 [远程 Studio API](docs/remote-studio-api.md)。
+
+---
+
+## 处理与训练流程
+
+```mermaid
+flowchart LR
+    Source["视频 / 音频"] --> Extract["FFmpeg 提取"]
+    Extract --> Separate["HT-Demucs 分离"]
+    Separate --> Segment["VAD 切片"]
+    Segment --> Transcribe["STT 标注"]
+    Transcribe --> Review["试听与修订"]
+    Review --> Dataset["训练数据"]
+    Dataset --> Train["GPT + SoVITS 训练"]
+    Train --> Voice["音色成果"]
+    Voice --> Provider["AstrBot TTS Provider"]
+```
+
+用户可以在训练前试听每个片段、修改 STT 文本并排除不合格素材，避免错误标注直接进入训练。
+
+### 导入已有音色
+
+本地插件音色可以放入：
+
+```text
+AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
+```
+
+VoiceClone Studio 使用它自己的音色目录。打开 Studio 的“音色与试听”页面，点击“打开音色文件夹”即可导入和检查已有音色。
+
+---
+
+## Provider（模型提供商）接入
+
+| 模式 | AstrBot Provider | 权重和参考音频所在位置 |
+| --- | --- | --- |
+| 本地 | `GSV TTS(Local)` | AstrBot 所在设备 |
+| 远程 | `GSVI TTS(API)` | VoiceClone Studio 所在设备 |
+
+本地模式会整理 GPT 权重、SoVITS 权重、参考音频、参考文本和语言，并允许用户在启用 Provider 前复核。
+
+远程模式从 Studio 同步音色元数据，为每个音色创建独立 Provider。服务器只保存远程音色标识和 API 配置，不会检查 Studio 的 Windows 权重路径。Provider 请求通过映射地址到达 Studio，生成的音频再返回 AstrBot。
+
+---
+
+## 中文文字与多语言语音
+
+| 可见文字 | 语音内容 | 输出方式 |
+| --- | --- | --- |
+| 中文 | 中文 | 先发送中文文字，再补发中文语音 |
+| 中文 | 日语 | 保留中文文字，翻译后补发日语语音 |
+
+长回复会按句拆分并保持原文顺序。翻译或语音合成失败时只保留文字，不会用错误语言继续合成。
+
+远程 VoiceClone Provider 会把中文回复提交给 Studio，由 Studio 使用已配置的 OpenAI 兼容 LLM 完成翻译，再调用 GPT-SoVITS 推理。本地模式及其他 TTS Provider 继续使用 AstrBot 当前会话模型完成翻译。
 
 ---
 
@@ -85,224 +188,38 @@ git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
 
 - AstrBot `>=4.24,<5`
 - Windows 10/11，或主流 x86_64/arm64 Linux 发行版
-- AstrBot 中已启用的语音转文字（STT/ASR）Provider
-- 建议使用支持 CUDA 的 NVIDIA GPU
+- AstrBot 中可用的 STT/ASR Provider
+- GPT-SoVITS v2Pro 推荐使用支持 CUDA 的 NVIDIA GPU
 
 推荐使用 Windows。Linux 部分环境可能需要手动配置 NVIDIA 驱动、CUDA 或系统依赖。插件不会修改系统驱动、软件源或全局 Python 环境。
 
-FFmpeg、人声分离模型和 GPT-SoVITS 运行包均按需下载，不包含在插件仓库或插件市场安装包中。运行环境、模型和训练成果统一写入 AstrBot 插件数据目录。
+远程部署时，以下配置要求对应 **VoiceClone Studio 所在设备**，轻量服务器本身不需要满足 GPT-SoVITS 的显卡要求。
 
 ### 推理参考配置
 
 | 最低配置 | 推荐配置 |
 | --- | --- |
-| **处理器：** Intel Core i3-6100、AMD Ryzen 3 1200 或同等性能处理器 | **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 |
-| **内存：** 4GB RAM | **内存：** 8GB RAM |
-| **显卡：** NVIDIA GeForce GTX 1650 4GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 2060 6GB 或同等性能显卡 |
-| **存储空间：** Linux 需要 12GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+| Intel Core i3-6100 / AMD Ryzen 3 1200 | Intel Core i5-8400 / AMD Ryzen 5 2600 |
+| 4GB RAM | 8GB RAM |
+| NVIDIA GeForce GTX 1650 4GB | NVIDIA GeForce RTX 2060 6GB |
+| Linux 12GB；Windows 安装期间 24GB | 30GB 可用空间 |
 
 ### 训练参考配置
 
 | 最低配置 | 推荐配置 |
 | --- | --- |
-| **处理器：** Intel Core i5-8400、AMD Ryzen 5 2600 或同等性能处理器 | **处理器：** Intel Core i5-12400、AMD Ryzen 5 5600 或同等性能处理器 |
-| **内存：** 8GB RAM | **内存：** 16GB RAM |
-| **显卡：** NVIDIA GeForce GTX 1660 SUPER 6GB 或同等性能显卡 | **显卡：** NVIDIA GeForce RTX 4060 8GB 或同等性能显卡 |
-| **存储空间：** Linux 需要 15GB；Windows 安装期间需要 24GB | **存储空间：** 需要 30GB 可用空间 |
+| Intel Core i5-8400 / AMD Ryzen 5 2600 | Intel Core i5-12400 / AMD Ryzen 5 5600 |
+| 8GB RAM | 16GB RAM |
+| NVIDIA GeForce GTX 1660 SUPER 6GB | NVIDIA GeForce RTX 4060 8GB |
+| Linux 15GB；Windows 安装期间 24GB | 30GB 可用空间 |
 
 最低配置以能够完成一次任务为基准，处理速度可能较慢。实际占用受模型、素材长度及并发量影响；硬件配置越高，处理速度通常越快。
 
 ---
 
-## 处理链路
+## 数据与生命周期
 
-```mermaid
-flowchart LR
-    Source["视频 / 音频素材"]
-    Extract["FFmpeg 提取"]
-    Separate["HT-Demucs 分离"]
-    Segment["VAD 切片"]
-    Transcribe["STT 标注"]
-    Review["试听与修订"]
-    Export["生成训练数据"]
-    TrainGPT["GPT 训练"]
-    TrainSoVITS["SoVITS 训练"]
-    Voice["音色成果"]
-    Provider["AstrBot TTS Provider"]
-
-    Source --> Extract
-    Extract --> Separate
-    Separate --> Segment
-    Segment --> Transcribe
-    Transcribe --> Review
-    Review --> Export
-    Export --> TrainGPT
-    Export --> TrainSoVITS
-    TrainGPT --> Voice
-    TrainSoVITS --> Voice
-    Voice --> Provider
-```
-
-处理链路采用可介入设计。用户可以在训练前试听每个片段、修改 STT 文本并排除不合格素材，避免错误标注直接进入模型训练。
-
-
----
-
-## 音色管理与 Provider（模型提供商） 接入
-
-训练完成后，插件会将 GPT 和 SoVITS 权重整理为独立音色，并自动获取：
-
-- GPT 权重
-- SoVITS 权重
-- 参考音频
-- 参考音频文本
-- 音色语言
-- 训练状态与来源
-
-插件可以创建或更新以下 AstrBot Provider：
-
-```text
-Provider ID: voice_clone_flow_gsv
-Provider 类型: GSV TTS(Local)
-```
-
-用户仍可在更新 Provider 前修改参考音频、参考文本和语言，确保推理配置与实际音色一致。
-
-
-外部 GPT-SoVITS 音色也可以放入：
-
-```text
-AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
-```
-
-返回插件页面刷新后，即可发现并登记外部音色。
-
----
-
-## 多语言文字与语音消息
-
-VoiceClone Flow 支持将文字消息与语音内容分离处理。
-
-| 可见文字 | 语音内容 | 输出方式 |
-| --- | --- | --- |
-| 中文 | 中文 | 先发送中文文字，再补发中文语音 |
-| 中文 | 日语 | 先发送中文文字，翻译后补发日语语音 |
-
-长回复会按句切分为多条语音，并按照原文顺序依次发送。
-
-翻译或语音合成失败时，插件只保留中文文字消息，不会使用错误语言继续合成。
-
-远程模式下，“GPT-SoVITS 语音后端”无需填写。AstrBot 将中文回复直接提交给远程 VoiceClone Provider，由 Studio 完成目标语言翻译和 GPT-SoVITS 推理；该字段仅用于插件在 AstrBot 所在机器运行本地 GPT-SoVITS 的场景。
-
-插件启动时会将 AstrBot 设置页中的运行模式与 Studio 连接配置同步为运行时配置。选择远程模式后，状态刷新、删除和启动接口均不会探测或管理服务器本地 GPT-SoVITS。
-
-插件同时监听完整 LLM 响应与发送前结果。其他输出插件改写消息结果类型时，插件优先使用最终可见文字，并以完整 LLM 回复作为兜底；同一回复只会创建一次语音任务。命令、系统提示和没有 LLM 标记的普通插件消息不会被转换为语音。
-
----
-
-## 技术架构
-
-```mermaid
-flowchart TB
-    subgraph AstrBot["AstrBot 平台"]
-        Lifecycle["插件生命周期"]
-        WebAPI["插件 Web API"]
-        STTProvider["STT / ASR Provider"]
-        TTSProvider["GSV TTS(Local) Provider"]
-        MessagePipeline["消息输出链路"]
-    end
-
-    subgraph Entry["VoiceClone Flow 接入层"]
-        Main["main.py / 插件入口"]
-        Page["Pages 管理页面"]
-        Schema["配置 Schema"]
-        Studio["StudioService"]
-    end
-
-    subgraph Workflow["工作流编排层"]
-        Material["MaterialPipeline"]
-        WorkflowService["WorkflowService"]
-        Runtime["RuntimeResources"]
-        Cleanup["DataCleanupService"]
-    end
-
-    subgraph Processing["素材处理层"]
-        Audio["FFmpeg 音频提取"]
-        Separator["HT-Demucs 人声分离"]
-        VAD["VAD 语音切片"]
-        ASR["AstrBot STT 标注"]
-        Review["片段审核与标注"]
-        Dataset["GPT-SoVITS 数据集"]
-    end
-
-    subgraph GSV["GPT-SoVITS 能力层"]
-        Installer["InstallManager"]
-        Training["TrainingService"]
-        Registry["VoiceRegistry"]
-        Synthesis["SynthesisService"]
-        ProviderBridge["Provider Bridge"]
-    end
-
-    subgraph Storage["插件数据层"]
-        Tasks["tasks / sessions"]
-        Datasets["datasets"]
-        Voices["voices"]
-        RuntimeData["runtime / models"]
-        Logs["logs"]
-    end
-
-    Lifecycle --> Main
-    Page --> WebAPI
-    WebAPI --> Main
-    Schema --> Main
-    Main --> Studio
-
-    Studio --> Material
-    Studio --> WorkflowService
-    Studio --> Runtime
-    Studio --> Cleanup
-
-    Material --> Audio
-    Audio --> Separator
-    Separator --> VAD
-    VAD --> ASR
-    STTProvider --> ASR
-    ASR --> Review
-    Review --> Dataset
-
-    Dataset --> Training
-    Runtime --> Installer
-    Installer --> RuntimeData
-    RuntimeData --> Training
-    RuntimeData --> Synthesis
-
-    Training --> Registry
-    Registry --> Voices
-    Registry --> Synthesis
-    Synthesis --> ProviderBridge
-    ProviderBridge --> TTSProvider
-    TTSProvider --> MessagePipeline
-
-    Material --> Tasks
-    Dataset --> Datasets
-    Training --> Logs
-    Cleanup --> Tasks
-    Cleanup --> Datasets
-```
-
-插件通过 AstrBot 原生能力完成以下接入：
-
-- 使用插件生命周期完成加载、重载和资源释放。
-- 使用 AstrBot Web API 提供独立管理页面。
-- 使用 AstrBot STT Provider 完成训练素材标注。
-- 创建或更新 AstrBot `GSV TTS(Local)` Provider。
-- 在消息输出阶段补发中文或日语语音。
-
----
-
-## 数据目录
-
-插件运行数据统一保存在：
+插件运行数据保存在：
 
 ```text
 AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/
@@ -312,88 +229,68 @@ AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/
 | --- | --- | --- |
 | `runtime/` | FFmpeg 和 GPT-SoVITS 运行环境 | 否 |
 | `models/` | 人声分离模型 | 否 |
-| `downloads/` | 运行环境下载缓存 | 安装成功后清理 |
-| `tasks/` | 素材处理任务与中间文件 | 按插件配置 |
+| `downloads/` | 下载缓存 | 安装成功后清理 |
+| `tasks/` | 素材任务与中间文件 | 按配置 |
 | `datasets/` | GPT-SoVITS 训练数据 | 按任务状态 |
 | `voices/` | 训练成果与外部音色 | 否 |
-| `data/logs/` | GPT-SoVITS API 服务日志 | 按运行产生 |
+| `data/logs/` | GPT-SoVITS 服务日志 | 按运行产生 |
 
-临时任务数据会定期清理，训练完成的音色不会被自动删除。
-
-迁移或更新 AstrBot 前，建议备份：
-
-```text
-AstrBot/data/plugin_data/astrbot_plugin_voice_clone_flow/voices/
-```
+临时任务数据会定期清理，训练完成的音色不会被自动删除。迁移或更新 AstrBot 前建议备份 `voices/`。
 
 ---
 
 ## 常见问题
 
-完整的 NapCat、AstrBot、FRP、VoiceClone Studio 与 GPT-SoVITS 通信配置见 [通信与部署说明](docs/communication-deployment.md)。
+### 轻量服务器应该选哪种模式？
+
+选择远程模式，并在另一台 Windows 电脑运行 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)。服务器只负责 AstrBot、插件和 NapCat，不加载 GPT-SoVITS。
+
+### 远程模式必须使用 FRP 吗？
+
+不是。插件接受服务器可访问的 HTTP(S) Studio 地址。VoiceClone Studio 集成 FRPC 管理，适合没有公网 IP 的个人用户；已有 VPN、Tailscale 或反向代理时也可以使用其他安全网络通道。
+
+### 远程连接成功，但同步到 0 个音色
+
+先在 Studio 的音色目录放入或训练至少一个完整音色，再刷新 Studio 音色列表，然后回到插件同步。
 
 ### Linux 安装时提示缺少系统依赖
 
-插件会管理自己的 Python、FFmpeg 和 GPT-SoVITS 文件，但不会自动安装 NVIDIA 驱动、CUDA 或系统动态库。请按照页面错误详情完成服务器基础环境配置后重试。
+插件会管理自己的 Python、FFmpeg 和 GPT-SoVITS 文件，但不会自动安装 NVIDIA 驱动、CUDA 或系统动态库。完成服务器基础环境配置后再重试，或改用远程 Studio 方案。
 
 ### GPT-SoVITS 启动时提示缺少预训练模型
 
-这表示 GPT-SoVITS 运行环境尚未完整安装，不是音色权重缺失。请在插件页面重新执行“下载安装”；安装器会复用有效缓存并重新校验 v2Pro 必需模型。Linux 可同时检查：
+这表示运行环境尚未完整安装，不是音色权重缺失。重新执行“下载安装”；安装器会复用有效缓存并校验 v2Pro 必需模型。
 
-```text
-data/logs/gpt-sovits-api.log
-```
+### 服务启动后退出或长时间无响应
 
-### 服务启动后进程退出或长时间无响应
-
-先检查可用内存、显存和系统 OOM 日志。无可用 NVIDIA GPU 时，Linux 会回退到 CPU 全精度推理，启动与合成速度会明显降低。
+检查内存、显存和系统 OOM 日志。无可用 NVIDIA GPU 时会回退到 CPU 全精度推理，启动与合成速度明显降低。轻量服务器建议不要运行本地 GPT-SoVITS。
 
 ### FFmpeg 或运行环境下载失败
 
-直接重试即可继续使用有效缓存。Windows 还可以在插件配置中指定自定义下载地址或本地 FFmpeg 路径。
-
-### 如何导入已有音色
-
-将包含 `gpt.ckpt`、`sovits.pth`、参考音频和标注信息的音色目录放入 `voices/`，返回插件页面刷新后即可发现并登记。
+直接重试即可复用有效缓存。Windows 也可以在插件配置中指定自定义下载地址或本地 FFmpeg 路径。
 
 ---
 
 ## 声音授权与安全
 
-<details>
-<summary><strong>使用本插件前请阅读</strong></summary>
+本插件仅用于处理你本人拥有或已经获得明确授权的声音素材。不得使用本插件冒充、欺骗、骚扰他人，传播未经授权的语音，绕过平台风控或从事违法违规活动。
 
-本插件仅用于处理你本人拥有或已经获得明确授权的声音素材。
-
-不得使用本插件：
-
-1. 冒充、误导或欺骗他人。
-2. 生成、传播未经授权的语音。
-3. 实施诈骗、骚扰、诽谤或身份欺骗。
-4. 绕过平台风控、身份验证或内容审核。
-5. 从事违反法律法规、平台规则或素材许可的行为。
-
-如果你不确定某个声音样本是否允许使用，请不要上传、训练或合成。
-
-使用者应自行确认声音素材的授权范围，并承担因使用本插件产生的相应责任。
-
-</details>
-
-GPT-SoVITS、FFmpeg、人声分离模型及兼容补丁分别受其上游许可证约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- Studio Token、FRP Token 和 OneBot Token 用途不同，请分别设置并妥善保管。
+- 远程映射端口建议只允许 AstrBot 服务器本机访问，不要直接开放到公网。
+- 插件不会保存或复用 AstrBot STT Provider 的 API Key。
+- GPT-SoVITS、FFmpeg、人声分离模型及兼容补丁分别受上游许可证约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ---
 
 ## 问题反馈
 
-提交问题时，请附上 AstrBot 版本、插件版本、操作阶段、复现步骤和已脱敏日志。
-
-请勿公开上传 API Key、未授权声音、私人训练素材或包含个人隐私的日志。
+提交问题时，请附上 AstrBot 版本、插件版本、使用模式、操作阶段、复现步骤和已脱敏日志。请勿公开上传 API Key、Token、未授权声音、私人训练素材或包含个人隐私的日志。
 
 - GitHub Issues：[提交问题](https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow/issues)
 - QQ：**3198260896**
 
----
-
 ## 开源协议
 
 本项目采用 [GNU Affero General Public License v3.0](LICENSE)。
+
+如果这个项目对你有帮助，欢迎在 [GitHub](https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow) 点一个 Star ⭐，也欢迎提交 Issue 和改进建议。
