@@ -12,7 +12,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-555)](LICENSE)
 
-[三种部署方案](#三种平行部署方案) · [快速开始](#快速开始) · [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio) · [核心能力](#核心能力) · [常见问题](#常见问题)
+[三种部署方案](#三种平行部署方案) · [快速开始](#快速开始) · [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio) · [核心能力](#核心能力) · [技术架构](#技术架构) · [常见问题](#常见问题)
 
 </div>
 
@@ -168,6 +168,78 @@ VoiceClone Studio 使用它自己的音色目录。打开 Studio 的“音色与
 本地模式会整理 GPT 权重、SoVITS 权重、参考音频、参考文本和语言，并允许用户在启用 Provider 前复核。
 
 远程模式从 Studio 同步音色元数据，为每个音色创建独立 Provider。服务器只保存远程音色标识和 API 配置，不会检查 Studio 的 Windows 权重路径。Provider 请求通过映射地址到达 Studio，生成的音频再返回 AstrBot。
+
+---
+
+## 技术架构
+
+```mermaid
+flowchart TB
+    User["QQ 用户"]
+    NapCat["NapCat / OneBot"]
+
+    subgraph AstrBotHost["AstrBot 运行设备"]
+        AstrBot["AstrBot 平台"]
+        Plugin["音色工作流插件"]
+        Page["插件管理页面"]
+        Message["消息输出链路"]
+        STT["AstrBot STT Provider"]
+        Provider["TTS Provider 管理"]
+
+        subgraph Workflow["素材与音色工作流"]
+            Extract["FFmpeg 音频提取"]
+            Separate["HT-Demucs 人声分离"]
+            VAD["VAD 语音切片"]
+            Review["STT 标注与人工审核"]
+            Dataset["训练数据生成"]
+            Registry["音色登记"]
+        end
+
+        subgraph LocalBackend["本地模式后端"]
+            LocalRuntime["GPT-SoVITS v2Pro"]
+            LocalVoice["本地音色与参考音频"]
+            LocalTTS["GSV TTS(Local)"]
+        end
+    end
+
+    subgraph RemoteDevice["远程或混合模式：另一台设备"]
+        Studio["VoiceClone Studio"]
+        RemoteRuntime["GPT-SoVITS v2Pro"]
+        RemoteVoice["远程音色与参考音频"]
+        FRPC["FRPC / 其他安全网络通道"]
+    end
+
+    NapCat <--> AstrBot
+    AstrBot --> Plugin
+    Plugin <--> Page
+    Plugin --> STT
+    Plugin --> Provider
+    Plugin --> Message
+    Plugin --> Extract
+    Message --> AstrBot
+
+    Extract --> Separate --> VAD --> Review --> Dataset
+    STT --> Review
+    Dataset --> LocalRuntime
+    LocalRuntime --> Registry
+    Registry --> LocalVoice
+    LocalVoice --> LocalTTS
+    LocalRuntime --> LocalTTS
+    LocalTTS --> Provider
+
+    Plugin <-->|"FRPS 映射 / HTTP(S)"| FRPC
+    FRPC <--> Studio
+    Studio --> RemoteRuntime
+    Studio --> RemoteVoice
+    RemoteRuntime --> Studio
+    RemoteVoice --> Studio
+    Studio -->|"音色同步与生成音频"| Plugin
+
+    Provider --> Message
+    User <--> NapCat
+```
+
+本地模式在 AstrBot 运行设备内完成素材处理、训练和推理；远程模式通过 Studio API 与安全网络通道调用另一台设备；混合部署则按当前任务和设备状态选择本地或远程后端。三种方案复用同一套插件页面、音色元数据和 AstrBot 消息输出链路。
 
 ---
 
