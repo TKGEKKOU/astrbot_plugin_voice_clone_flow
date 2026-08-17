@@ -2,6 +2,12 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.6] - 2026-08-17
+
+### 修复
+
+- 兼容 AstrBot 4.27.2：当运行时未提供异步 TTS Provider 获取接口时，自动回退到同步接口，避免真实 LLM 回复在选 Provider 阶段因 `AttributeError` 被跳过。
+
 ## [0.3.5] - 2026-08-17
 
 ### 修复

@@ -38,6 +38,13 @@ class _Context:
         self.sent.append((umo, chain))
 
 
+class _SyncOnlyContext(_Context):
+    get_using_tts_provider_async = None
+
+    def get_using_tts_provider(self, _umo):
+        return self.provider
+
+
 class _Translator:
     def __init__(self):
         self.inputs = []
@@ -81,6 +88,16 @@ class _Response:
 
 
 class SpeechOutputTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_context_uses_sync_tts_provider_fallback(self):
+        provider = _Provider("voice_clone_flow_remote_voice-1")
+        context = _SyncOnlyContext(provider)
+        decorator = BilingualTTSDecorator(context, _Translator(), target_language="ja")
+
+        await decorator._render_sentence("umo-1", "你好")
+
+        self.assertEqual(provider.inputs, ["你好"])
+        self.assertEqual(len(context.sent), 1)
+
     async def test_remote_voice_clone_provider_receives_chinese_without_server_translation(self):
         provider = _Provider("voice_clone_flow_remote_voice-1")
         context = _Context(provider)

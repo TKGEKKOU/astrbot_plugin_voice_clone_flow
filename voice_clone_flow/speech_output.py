@@ -163,7 +163,13 @@ class BilingualTTSDecorator:
     async def _render_sentence(self, umo: str, sentence: str) -> None:
         provider_id = ""
         try:
-            tts_provider = await self.context.get_using_tts_provider_async(umo)
+            async_resolver = getattr(self.context, "get_using_tts_provider_async", None)
+            if callable(async_resolver):
+                tts_provider = await async_resolver(umo)
+            else:
+                # AstrBot 4.27.2 exposes only the synchronous context helper.
+                sync_resolver = getattr(self.context, "get_using_tts_provider", None)
+                tts_provider = sync_resolver(umo) if callable(sync_resolver) else None
             if tts_provider is None:
                 logger.warning("Japanese speech skipped: no TTS provider for session")
                 return

@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.3.5-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.6-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
