@@ -32,7 +32,7 @@ if __package__:
     from .voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from .voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
     from .voice_clone_flow.platform_runtime import detect_platform_profile
-    from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
+    from .voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore, resolve_astrbot_remote_config
     from .voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from .voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config, finalize_remote_provider_delivery, normalize_delivery_provider
     from .voice_clone_flow.frp_manager import FrpManager, FrpManagerError
@@ -58,7 +58,7 @@ else:
     from voice_clone_flow.data_cleanup import build_cleanup_preview, remove_cleanup_items
     from voice_clone_flow.speech_output import BilingualTTSDecorator, JapaneseSpeechTranslator
     from voice_clone_flow.platform_runtime import detect_platform_profile
-    from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore
+    from voice_clone_flow.remote_config import RemoteStudioConfig, RemoteStudioConfigError, RemoteStudioConfigStore, resolve_astrbot_remote_config
     from voice_clone_flow.remote_studio import RemoteStudioClient, RemoteStudioError
     from voice_clone_flow.remote_provider import apply_remote_provider, build_remote_provider_config, finalize_remote_provider_delivery, normalize_delivery_provider
     from voice_clone_flow.frp_manager import FrpManager, FrpManagerError
@@ -74,6 +74,11 @@ class VoiceCloneFlowPlugin(Star):
             self.remote_config = self.remote_config_store.load()
         except RemoteStudioConfigError:
             self.remote_config = RemoteStudioConfig()
+        try:
+            self.remote_config = resolve_astrbot_remote_config(self.remote_config, config)
+            self.remote_config_store.save(self.remote_config)
+        except RemoteStudioConfigError as exc:
+            logger.warning("VoiceClone Flow 远程配置无效，继续使用已保存配置：%s", exc)
         self.remote_last_error = ""
         self.remote_last_check = None
         self.remote_last_sync = None
@@ -261,6 +266,31 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"removed": self.ffmpeg_resources.delete_managed()})
 
     async def page_gpt_status(self):
+        if self.remote_config.mode == "remote":
+            platform = detect_platform_profile().system
+            message = "远程模式不使用服务器本地 GPT-SoVITS"
+            return json_response(
+                {
+                    "runtime": {
+                        "installed": False,
+                        "present": False,
+                        "installing": False,
+                        "platform": platform,
+                        "mode": "remote",
+                        "message": message,
+                    },
+                    "service": {
+                        "configured": False,
+                        "installed": False,
+                        "ready": False,
+                        "service_running": False,
+                        "platform": platform,
+                        "mode": "remote",
+                        "error": message,
+                    },
+                    "voices": 0,
+                }
+            )
         service = self.gpt_adapter.status()
         service.update({"starting": self.gpt_starting, "start_error": self.gpt_start_error})
         return json_response({"runtime": self.gpt_install.status(), "service": service, "voices": len(self.voice_registry.list())})
@@ -280,6 +310,8 @@ class VoiceCloneFlowPlugin(Star):
         return json_response({"cancelled": self.gpt_install.cancel_install(), **self.gpt_install.status()})
 
     async def page_gpt_delete(self):
+        if self.remote_config.mode == "remote":
+            return error_response("远程模式下不能管理本地 GPT-SoVITS", status_code=409)
         try:
             self.gpt_adapter.stop_service()
             return json_response(self.gpt_install.remove_install())

@@ -43,6 +43,24 @@ class RemoteStudioConfig:
         return asdict(self)
 
 
+def resolve_astrbot_remote_config(
+    stored: RemoteStudioConfig,
+    astrbot_config: object,
+) -> RemoteStudioConfig:
+    getter = getattr(astrbot_config, "get", None)
+    if not callable(getter):
+        return stored.validate()
+    settings = getter("remote_studio", {})
+    if not isinstance(settings, dict):
+        settings = {}
+    return RemoteStudioConfig(
+        mode=getter("remote_mode", stored.mode),
+        base_url=settings.get("base_url") or stored.base_url,
+        token=settings.get("token") or stored.token,
+        timeout_seconds=settings.get("timeout_seconds", stored.timeout_seconds),
+    ).validate()
+
+
 class RemoteStudioConfigStore:
     def __init__(self, data_dir: Path):
         self.path = Path(data_dir) / "remote_studio.json"

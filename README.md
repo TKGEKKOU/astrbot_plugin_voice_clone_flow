@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.3.4-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.5-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
@@ -191,6 +191,8 @@ VoiceClone Flow 支持将文字消息与语音内容分离处理。
 翻译或语音合成失败时，插件只保留中文文字消息，不会使用错误语言继续合成。
 
 远程模式下，“GPT-SoVITS 语音后端”无需填写。AstrBot 将中文回复直接提交给远程 VoiceClone Provider，由 Studio 完成目标语言翻译和 GPT-SoVITS 推理；该字段仅用于插件在 AstrBot 所在机器运行本地 GPT-SoVITS 的场景。
+
+插件启动时会将 AstrBot 设置页中的运行模式与 Studio 连接配置同步为运行时配置。选择远程模式后，状态刷新、删除和启动接口均不会探测或管理服务器本地 GPT-SoVITS。
 
 插件同时监听完整 LLM 响应与发送前结果。其他输出插件改写消息结果类型时，插件优先使用最终可见文字，并以完整 LLM 回复作为兜底；同一回复只会创建一次语音任务。命令、系统提示和没有 LLM 标记的普通插件消息不会被转换为语音。
 
