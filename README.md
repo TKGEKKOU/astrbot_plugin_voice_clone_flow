@@ -155,83 +155,115 @@ VoiceClone Studio 使用它自己的音色目录。打开 Studio 的“音色与
 ## 技术架构
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 22, "rankSpacing": 34}}}%%
 flowchart LR
     subgraph Platform["AstrBot 平台"]
         direction TB
-        QQ["QQ 用户"] <--> NapCat["NapCat / OneBot"]
-        NapCat <--> AstrBot["AstrBot 平台"]
+        QQ(["QQ 用户"])
+        NapCat["NapCat / OneBot"]
+        AstrBot(["AstrBot 平台"])
         LLM["LLM Provider<br/>生成文字回复"]
         STT["STT / ASR Provider<br/>语音转文字"]
         ProviderMgr["TTS Provider 管理<br/>选择本地或远程 Provider"]
-        FRPS["FRPS<br/>服务器端隧道入口"]
 
-        AstrBot -->|"文本请求"| LLM
-        LLM -->|"最终文字回复"| AstrBot
-        AstrBot -->|"语音消息"| STT
-        STT -->|"识别文本"| AstrBot
+        QQ <-->|"文字 / QQ 语音"| NapCat
+        NapCat <-->|"OneBot v11 事件 / 消息"| AstrBot
+        AstrBot <-->|"对话请求 / 回复文本"| LLM
+        AstrBot <-->|"语音消息 / 识别文本"| STT
         AstrBot <--> ProviderMgr
     end
 
-    subgraph Flow["VoiceClone Flow 插件"]
+    subgraph PluginArea["VoiceClone Flow 插件"]
         direction TB
-        Page["插件页面<br/>模式、音色、运行状态"]
-        Mode["模式选择与任务编排<br/>本地 · 远程 · 混合"]
-        Hook["消息钩子<br/>捕获最终 LLM 回复"]
-        Speech["语音编排<br/>分句 · 清洗 · 语言判断"]
-        Translate["可选文本翻译<br/>中文 → 日语等多语言"]
-        Extract["FFmpeg<br/>音频提取"]
-        Separate["HT-Demucs<br/>人声分离"]
-        Split["VAD<br/>语音切分"]
-        Annotate["STT 标注与人工审核<br/>试听 · 修订 · 筛选"]
-        Dataset["训练数据生成<br/>音频 · 文本 · 语言"]
-        LocalGSV["本地 GPT-SoVITS v2Pro<br/>训练 / 推理 API"]
-        VoiceReg["音色登记与音色库<br/>权重 · 参考音频 · 文本"]
-        Gateway["远程网关<br/>同步 · 转发 · WAV 回传"]
-        Config["Provider 自动配置<br/>GSV TTS(Local) / GSVI TTS(API)"]
 
-        Page --> Mode
-        Mode --> Extract --> Separate --> Split --> Annotate --> Dataset
-        Dataset -->|"训练任务"| LocalGSV
-        LocalGSV -->|"训练成果"| VoiceReg
-        VoiceReg --> Config
-        Mode --> Hook --> Speech
-        Speech -->|"需要翻译时"| Translate
-        Speech -->|"无需翻译：本地请求"| LocalGSV
-        Speech -->|"无需翻译：远程请求"| Gateway
-        Translate -->|"翻译文本"| LocalGSV
-        Translate -->|"翻译文本"| Gateway
-        LocalGSV -->|"本地 WAV"| Speech
-        Gateway -->|"远程 WAV / 音色元数据"| Speech
-        Gateway --> VoiceReg
+        subgraph ControlLane["配置与模式"]
+            direction LR
+            Page["插件页面<br/>配置 · 状态 · 操作反馈"]
+            Mode{"运行模式"}
+            Settings["持久化配置<br/>本地 / 远程分别保存"]
+            ProviderConfig["Provider 自动配置<br/>GSV TTS / GSVI TTS"]
+            Page --> Mode --> Settings --> ProviderConfig
+        end
+
+        subgraph MaterialLane["素材准备"]
+            direction LR
+            Upload["音视频素材"]
+            Extract["FFmpeg<br/>音频提取"]
+            Separate["HT-Demucs<br/>人声分离"]
+            Split["VAD<br/>语音切分"]
+            Review["STT 标注与人工审核<br/>试听 · 修订 · 筛选"]
+            Upload --> Extract --> Separate --> Split --> Review
+        end
+
+        subgraph TrainingLane["训练与音色"]
+            direction LR
+            Dataset["训练数据<br/>音频 · 文本 · 语言"]
+            Train["GPT-SoVITS 训练<br/>预设 · Epoch · 日志"]
+            VoiceReg["音色登记<br/>GPT / SoVITS 权重"]
+            VoiceMeta["音色元数据<br/>参考音频 · 文本 · 语言"]
+            Dataset --> Train --> VoiceReg --> VoiceMeta
+        end
+
+        subgraph RuntimeLane["消息与语音输出"]
+            direction LR
+            RuntimePort["AstrBot TTS 接口<br/>文本请求 / WAV 返回"]
+            Hook["最终回复钩子<br/>捕获可见 LLM 文本"]
+            Prepare["文本预处理<br/>分句 · 清洗 · 语言判断"]
+            Route{"推理位置"}
+            LocalGSV["本地 GPT-SoVITS API"]
+            Gateway["远程 Studio 网关"]
+            Result(["WAV 音频"])
+
+            RuntimePort --> Hook --> Prepare --> Route
+            Route -->|"本地"| LocalGSV --> Result
+            Route -->|"远程"| Gateway --> Result
+            Result --> RuntimePort
+        end
+
+        subgraph NetworkLane["远程连接（仅远程或混合模式）"]
+            direction LR
+            StudioURL["Studio 映射地址<br/>HTTP(S) + Bearer Token"]
+            FRPS["FRPS（服务器独立服务）<br/>控制连接 · 端口映射"]
+            Gateway <-->|"JSON 请求 / WAV / 音色元数据"| StudioURL
+            StudioURL <--> FRPS
+        end
+
+        Mode --> Upload
+        Review --> Dataset
+        Mode --> Route
+        VoiceMeta --> ProviderConfig
+        VoiceMeta --> LocalGSV
+        Gateway -->|"同步远程音色"| VoiceMeta
     end
 
     subgraph Remote["可选：训练与推理设备"]
         direction TB
         FRPC["FRPC<br/>本地客户端 · Token 鉴权"]
-        Studio["VoiceClone Studio API<br/>控制台 · 状态监控 · 服务开关"]
+        StudioUI["VoiceClone Studio 页面<br/>配置 · 监控 · 服务开关"]
+        Studio(["VoiceClone Studio API"])
         RemoteVoice["远程音色库<br/>权重 · 参考音频 · 参考文本"]
         RemoteRuntime["GPT-SoVITS v2Pro API<br/>训练 / 推理"]
         RemoteLLM["可选翻译 LLM<br/>OpenAI 兼容接口"]
 
         FRPC -->|"转发本地 Studio 端口"| Studio
+        StudioUI -->|"管理与查看状态"| Studio
         Studio <--> RemoteVoice
         Studio <--> RemoteRuntime
         Studio <--> RemoteLLM
     end
 
-    AstrBot -->|"加载插件 / 传入事件"| Hook
-    ProviderMgr -->|"TTS 请求：文本、音色、语言"| Speech
-    Config -->|"注册 / 更新 Provider"| ProviderMgr
-    Speech -->|"返回 WAV 音频"| ProviderMgr
-    ProviderMgr -->|"语音消息"| AstrBot
-    AstrBot -->|"发送语音"| NapCat
-    NapCat -->|"QQ 音频消息"| QQ
-    STT -->|"选择的 STT Provider"| Annotate
-    Gateway <-->|"HTTP 请求 / JSON + WAV"| FRPS
+    Platform ~~~ PluginArea
+    PluginArea ~~~ Remote
+
+    AstrBot -->|"最终 LLM 回复事件"| RuntimePort
+    ProviderMgr <-->|"TTS 请求 / WAV 音频"| RuntimePort
+    ProviderConfig -->|"注册 / 更新"| ProviderMgr
+    STT -->|"素材识别"| Review
+    LLM -->|"本地模式可选翻译"| Prepare
     FRPS <-->|"FRP 控制与数据连接"| FRPC
 ```
 
-左栏是 AstrBot 服务器上的真实消息链路，包含 NapCat、LLM/STT Provider、TTS Provider 管理和 FRPS；中栏是插件负责的素材、训练、音色和语音编排；右栏只有在远程或混合模式下才启用。远程请求的实际路径是“插件远程网关 → FRPS → FRPC → Studio API → GPT-SoVITS”，音色元数据和 WAV 音频沿相反方向返回，最后仍由 AstrBot 交给 NapCat/QQ。
+左栏固定为 AstrBot、NapCat 与模型提供商；中栏按“配置、素材、训练、语音输出、远程连接”五条功能带展开，是整张图的主体；右栏仅在远程或混合模式下启用。远程请求依次经过“插件网关 → Studio 映射地址 → FRPS → FRPC → Studio API → GPT-SoVITS”，生成的 WAV 和音色元数据沿原连接返回，最终仍由 AstrBot 经 NapCat 发送到 QQ。
 
 ---
 
