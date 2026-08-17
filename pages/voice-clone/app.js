@@ -15,8 +15,9 @@ function errorText(error) {
 
 function applyRemoteMode() {
   const mode = $("remoteMode").value;
-  for (const item of document.querySelectorAll("[data-local-only]")) item.hidden = mode === "remote";
-  for (const item of document.querySelectorAll("[data-remote-only]")) item.hidden = mode !== "remote";
+  const remote = mode === "remote";
+  for (const item of document.querySelectorAll("[data-local-only]")) { item.hidden = remote; item.setAttribute("aria-hidden", String(remote)); }
+  for (const item of document.querySelectorAll("[data-remote-only]")) { item.hidden = !remote; item.setAttribute("aria-hidden", String(!remote)); }
   $("remoteBaseUrl").disabled = mode !== "remote";
   $("remoteToken").disabled = mode !== "remote";
   $("remoteTimeout").disabled = mode !== "remote";

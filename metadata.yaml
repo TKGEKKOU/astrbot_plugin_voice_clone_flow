@@ -1,10 +1,9 @@
 name: astrbot_plugin_voice_clone_flow
-display_name: VoiceClone Flow | 从音视频素材到音色管理
-short_desc: 从音视频素材处理、训练到 AstrBot 音色管理的一站式 GPT-SoVITS 工作台。
+display_name: 音色工作流 | GPT-SoVITS 音色管理
+short_desc: 支持本地全流程、远程 VoiceClone Studio 和混合部署的 GPT-SoVITS 音色工作台。
 desc: >-
-  一站式完成音视频素材的音频提取、人声分离、语音切分、STT 标注、片段审核、
-  GPT-SoVITS 训练、音色登记和 AstrBot TTS Provider 接入。支持多语言文字与语音消息组合。
-version: 0.3.6
+  支持三种使用方案：在 AstrBot 服务器本地完成处理、训练与推理；使用远程 VoiceClone Studio 将推理算力放到另一台电脑；或按需采用本地训练与远程推理的混合部署。完成音频提取、人声分离、语音切分、STT 标注、片段审核、GPT-SoVITS 训练、音色登记和 AstrBot TTS Provider 接入，支持多语言文字与语音消息组合。
+version: 0.3.7
 author: TKGEKKOU
 repo: https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow
 astrbot_version: ">=4.24,<5"

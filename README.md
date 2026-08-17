@@ -6,7 +6,7 @@
 
 面向 AstrBot 的 GPT-SoVITS 音色生产、管理与接入插件。
 
-[![Version](https://img.shields.io/badge/version-0.3.6-2f855a)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.7-2f855a)](CHANGELOG.md)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24%2C%3C5-4c8bf5)](https://github.com/AstrBotDevs/AstrBot)
 [![GPT-SoVITS](https://img.shields.io/badge/GPT--SoVITS-v2Pro-6f42c1)](https://github.com/RVC-Boss/GPT-SoVITS)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078d4)](#系统与参考配置)
@@ -69,7 +69,9 @@ git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
 
 ### 远程工作室模式
 
-服务器可以只运行 AstrBot、VoiceClone Flow 和 NapCat，把推理交给另一台电脑上的 VoiceClone Studio。进入插件页面顶部切换为“远程连接模式”，填写从 AstrBot 服务器能够访问的 Studio `http://` 或 `https://` 地址和 Token，然后测试连接并手动同步远程音色。
+如果服务器配置较低，可以使用独立应用 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)。服务器只运行 AstrBot、VoiceClone Flow 和 NapCat，把 GPT-SoVITS 推理和训练交给另一台高性能电脑。进入插件页面顶部切换为“远程连接模式”，填写从 AstrBot 服务器能够访问的 Studio `http://` 或 `https://` 地址和 Token，然后测试连接并手动同步远程音色。
+
+这是一种“控制端与算力端解耦”的分布式部署方案：AstrBot 负责消息、Provider 和 QQ 通信，Studio 负责模型运行与音频生成。它不是多机并行训练集群，而是把资源密集型任务从轻量服务器分离到本地电脑。也可以采用混合方案：服务器保留插件和消息处理，本地 Studio 负责训练、音色管理与推理。
 
 远程模式只负责推理和音色同步，训练仍在 Studio 所在电脑完成；插件不会在服务器启动或安装 GPT-SoVITS，也不会检查 Windows 权重路径。一个远程音色对应一个独立 Provider。FRP 或其他网络通道需要用户自行建立，`127.0.0.1` 表示发起请求的服务器本机，只有映射到服务器本机端口时才可使用。
 

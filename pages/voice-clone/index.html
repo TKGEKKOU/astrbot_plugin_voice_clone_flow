@@ -18,12 +18,12 @@
     <div class="remote-controls">
       <label class="field compact"><span>模式</span><select id="remoteMode"><option value="local">本地模式</option><option value="remote">远程连接模式</option></select></label>
       <label class="field" data-remote-only hidden><span>Studio 地址</span><input id="remoteBaseUrl" type="text" placeholder="http://服务器可访问的地址:端口"></label>
-      <label class="field" data-remote-only hidden><span>Token</span><input id="remoteToken" type="text" spellcheck="false"></label>
+      <label class="field" data-remote-only hidden><span>Studio Token</span><input id="remoteToken" type="password" autocomplete="off" spellcheck="false"></label>
       <label class="field compact" data-remote-only hidden><span>超时（秒）</span><input id="remoteTimeout" type="number" min="1" value="300"></label>
     </div>
     <div class="remote-actions" data-remote-only hidden><button id="remoteTest" class="secondary" type="button">测试连接</button><button id="remoteSync" type="button">同步远程音色</button><span id="remoteMessage" role="status"></span></div>
     <div id="remoteFrp" class="remote-frp" data-remote-only hidden>
-      <strong>服务器 FRP</strong><span id="frpStatus">检查中</span><input id="frpToken" type="text" placeholder="FRP Token"><input id="frpPort" type="number" value="19090" min="1025"><button id="frpPrepare" class="secondary" type="button">准备服务端 FRP</button><button id="frpRestart" class="secondary" type="button">重启 FRP</button>
+      <strong>服务器 FRP</strong><span id="frpStatus">检查中</span><input id="frpToken" type="password" autocomplete="off" placeholder="FRP Token"><input id="frpPort" type="number" value="19090" min="1025"><button id="frpPrepare" class="secondary" type="button">准备服务端 FRP</button><button id="frpRestart" class="secondary" type="button">重启 FRP</button>
     </div>
     <div id="remoteVoices" class="remote-voices" data-remote-only hidden></div>
     <div id="remoteProviders" class="remote-providers" data-remote-only hidden></div>
