@@ -19,7 +19,7 @@
 VoiceClone Flow 将素材处理、语音标注、GPT-SoVITS 训练、音色管理、TTS Provider 配置和语音消息输出整合为一条完整工作流。它既可以在 AstrBot 服务器上独立运行，也可以把训练与推理交给另一台高性能设备，让轻量服务器只负责机器人和消息通信。
 
 > [!TIP]
-> **轻量服务器用户可以选择远程模式。** 单独下载 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)，在另一台设备按需开启 GPT-SoVITS 和 FRPC。不用语音时一键关闭，可以释放显存和后台进程，也不需要为云服务器长期配置 GPU。本地全流程与混合部署同样是完整支持的平行方案。
+> **轻量服务器用户可以选择远程模式。** 单独下载 [VoiceClone Studio](https://github.com/TKGEKKOU/voiceclone-studio)，在另一台设备按需开启 GPT-SoVITS 和 FRPC。不用语音时一键关闭，可以释放显存和后台进程，也不需要为云服务器长期配置 GPU。
 
 > [!IMPORTANT]
 > 本项目基于 **GPT-SoVITS v2Pro**。VoiceClone Studio 是独立应用，不包含在插件安装包中：
