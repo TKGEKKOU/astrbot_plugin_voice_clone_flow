@@ -159,44 +159,52 @@ flowchart LR
     subgraph Platform["AstrBot 平台"]
         direction TB
         QQ["QQ 用户"] <--> NapCat["NapCat / OneBot"]
-        NapCat <--> AstrBot["AstrBot"]
-        AstrBot <--> Provider["模型提供商与消息输出"]
+        NapCat <--> AstrBot["AstrBot 平台"]
+        AstrBot <--> Chat["会话与消息编排"]
+        Chat <--> Providers["LLM / STT / TTS<br/>模型提供商"]
     end
 
     subgraph Flow["VoiceClone Flow 插件"]
         direction TB
-        Plugin["插件控制与任务编排"]
-        Material["素材处理<br/>提取 · 分离 · 切分 · STT 标注"]
-        Voice["训练与音色管理<br/>审核 · 训练 · 音色登记"]
-        Local["本地推理<br/>GPT-SoVITS v2Pro"]
-        Config["TTS Provider 自动配置"]
+        Mode["模式与任务编排<br/>本地 · 远程 · 混合"]
+        Material["素材处理<br/>FFmpeg · 人声分离 · VAD 切分"]
+        Annotation["STT 标注与片段审核<br/>试听 · 修订 · 筛选"]
+        Training["训练数据与 GPT-SoVITS 训练<br/>预设 · Epoch · 日志"]
+        Voices["音色库与元数据<br/>权重 · 参考音频 · 文本 · 语言"]
+        Local["本地推理服务<br/>GPT-SoVITS v2Pro API"]
+        Gateway["远程网关<br/>音色同步 · 请求转发 · WAV 回传"]
+        Config["Provider 自动配置<br/>GSV TTS(Local) / GSVI TTS(API)"]
 
-        Plugin --> Material --> Voice
-        Voice --> Local
-        Voice --> Config
-        Local --> Config
+        Mode --> Material --> Annotation --> Training --> Voices
+        Voices --> Local --> Config
+        Voices --> Config
+        Mode <--> Gateway
     end
 
     subgraph Remote["可选：其他设备"]
         direction TB
-        Tunnel["FRPC / HTTP(S)<br/>安全网络连接"]
-        Studio["VoiceClone Studio"]
-        RemoteVoice["远程音色与参考素材"]
-        RemoteRuntime["GPT-SoVITS v2Pro<br/>训练与推理"]
+        Tunnel["FRPC / FRPS<br/>Token 鉴权 · HTTP(S) 隧道"]
+        Studio["VoiceClone Studio<br/>控制台 · 状态监控 · 服务开关"]
+        RemoteVoice["远程音色库<br/>参考音频 · 权重 · 参考文本"]
+        RemoteRuntime["GPT-SoVITS v2Pro<br/>训练与推理 API"]
+        RemoteLLM["可选翻译 LLM<br/>中文转日语等多语言处理"]
 
         Tunnel <--> Studio
         Studio <--> RemoteVoice
         Studio <--> RemoteRuntime
+        Studio <--> RemoteLLM
     end
 
-    AstrBot <--> Plugin
-    Config -->|"注册或同步"| Provider
-    Provider -->|"TTS 请求"| Plugin
-    Plugin -->|"生成音频"| Provider
-    Plugin -.->|"远程模式（可选）"| Tunnel
+    AstrBot <--> Mode
+    Chat -->|"文字 / 语音消息"| Mode
+    Config <--> Providers
+    Providers -->|"TTS 请求"| Mode
+    Mode -->|"本地音频或远程音频"| Providers
+    Gateway <--> Tunnel
+    Studio -->|"音色元数据 / WAV 音频"| Gateway
 ```
 
-本地模式由中间的插件工作流直接完成处理、训练与推理；需要分离算力时，才通过安全网络连接调用右侧设备。两种路径最终都复用 AstrBot 的 Provider 与 NapCat/QQ 消息链路。
+本地模式沿中栏向下运行，在 AstrBot 所在设备完成素材处理、训练和推理；远程模式只启用中栏的远程网关，经 FRP/HTTP(S) 调用右侧 Studio。音色元数据和 WAV 音频均通过网关返回，最终由 AstrBot 的 TTS Provider 交给 NapCat/QQ。
 
 ---
 
