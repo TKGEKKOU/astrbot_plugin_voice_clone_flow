@@ -106,15 +106,6 @@ git clone https://github.com/TKGEKKOU/astrbot_plugin_voice_clone_flow.git
 
 服务器插件中的“GPT-SoVITS 语音后端”在远程模式下留空。
 
-### 2C. 混合部署
-
-1. 根据现有环境决定训练和推理分别运行在哪台设备。
-2. 需要服务器本地推理时选择本地模式并使用 `GSV TTS(Local)`。
-3. 需要另一台设备承担推理时切换远程模式并同步 Studio 音色。
-4. 两种模式的配置分别保存，切换模式不会要求重新训练音色。
-
-混合部署不是同时重复运行两套推理服务，而是按任务、设备状态和算力需求选择当前使用的后端。
-
 详细端口、Token 和 NapCat/AstrBot 配置见 [通信与部署说明](docs/communication-deployment.md)。Studio API 契约见 [远程 Studio API](docs/remote-studio-api.md)。
 
 ---
